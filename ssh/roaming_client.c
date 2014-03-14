@@ -1,4 +1,4 @@
-/* $OpenBSD: roaming_client.c,v 1.4 2011/12/07 05:44:38 djm Exp $ */
+/* $OpenBSD: roaming_client.c,v 1.5 2013/05/17 00:13:14 djm Exp $ */
 /*
  * Copyright (c) 2004-2009 AppGate Network Security AB
  *
@@ -203,7 +203,7 @@ roaming_resume(void)
 		debug("server doesn't allow resume");
 		goto fail;
 	}
-	xfree(str);
+	free(str);
 	/* kex algorithm taken care of so start with i=1 and not 0 */
 	for (i = 1; i < PROPOSAL_MAX; i++)
 		if ((r = sshpkt_get_string(ssh, NULL, NULL)) != 0)
@@ -248,8 +248,7 @@ roaming_resume(void)
 fail:
 	if (r != 0)
 		fatal("%s: %s", __func__, ssh_err(r));
-	if (kexlist)
-		xfree(kexlist);
+	free(kexlist);
 	if (ssh_packet_get_connection_in(ssh) ==
 	    ssh_packet_get_connection_out(ssh))
 		close(ssh_packet_get_connection_in(ssh));

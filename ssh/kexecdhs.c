@@ -1,4 +1,4 @@
-/* $OpenBSD: kexecdhs.c,v 1.2 2010/09/22 05:01:29 djm Exp $ */
+/* $OpenBSD: kexecdhs.c,v 1.4 2013/05/17 00:13:13 djm Exp $ */
 /*
  * Copyright (c) 2001 Markus Friedl.  All rights reserved.
  * Copyright (c) 2010 Damien Miller.  All rights reserved.
@@ -70,13 +70,9 @@ input_kex_ecdh_init(int type, u_int32_t seq, struct ssh *ssh)
 	u_char *kbuf = NULL, *hash;
 	size_t slen, sbloblen;
 	size_t klen = 0, hashlen;
-	int curve_nid, r;
+	int r;
 
-	if ((curve_nid = kex_ecdh_name_to_nid(kex->name)) == -1) {
-		r = SSH_ERR_INVALID_ARGUMENT;
-		goto out;
-	}
-	if ((server_key = EC_KEY_new_by_curve_name(curve_nid)) == NULL) {
+	if ((server_key = EC_KEY_new_by_curve_name(kex->ec_nid)) == NULL) {
 		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}

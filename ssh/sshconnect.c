@@ -1,4 +1,4 @@
-/* $OpenBSD: sshconnect.c,v 1.236 2012/09/14 16:51:34 markus Exp $ */
+/* $OpenBSD: sshconnect.c,v 1.238 2013/05/17 00:13:14 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -81,6 +81,14 @@ ssh_proxy_connect(const char *host, u_short port, const char *proxy_command)
 	pid_t pid;
 	char *shell, strport[NI_MAXSERV];
 
+	if (!strcmp(proxy_command, "-")) {
+		ssh = ssh_packet_set_connection(NULL, STDIN_FILENO,
+		    STDOUT_FILENO);
+		ssh_packet_set_timeout(ssh, options.server_alive_interval,
+		    options.server_alive_count_max);
+		return 0;
+	}
+
 	if ((shell = getenv("SHELL")) == NULL || *shell == '\0')
 		shell = _PATH_BSHELL;
 
@@ -97,7 +105,7 @@ ssh_proxy_connect(const char *host, u_short port, const char *proxy_command)
 	xasprintf(&tmp, "exec %s", proxy_command);
 	command_string = percent_expand(tmp, "h", host, "p", strport,
 	    "r", options.user, (char *)NULL);
-	xfree(tmp);
+	free(tmp);
 
 	/* Create pipes for communicating with the proxy. */
 	if (pipe(pin) < 0 || pipe(pout) < 0)
@@ -151,7 +159,7 @@ ssh_proxy_connect(const char *host, u_short port, const char *proxy_command)
 	close(pout[1]);
 
 	/* Free the command name. */
-	xfree(command_string);
+	free(command_string);
 
 	/* Set the connection file descriptors. */
 	ssh = ssh_packet_set_connection(NULL, pout[0], pin[1]);
@@ -300,7 +308,7 @@ timeout_connect(int sockfd, const struct sockaddr *serv_addr,
 		fatal("Bogus return (%d) from select()", rc);
 	}
 
-	xfree(fdset);
+	free(fdset);
 
  done:
  	if (result == 0 && *timeoutp > 0) {
@@ -520,7 +528,7 @@ ssh_exchange_identification(struct ssh *ssh, int timeout_ms)
 		debug("ssh_exchange_identification: %s", buf);
 	}
 	server_version_string = xstrdup(buf);
-	xfree(fdset);
+	free(fdset);
 
 	/*
 	 * Check that the versions match.  In future this might accept
@@ -596,8 +604,7 @@ confirm(const char *prompt)
 			ret = 0;
 		if (p && strncasecmp(p, "yes", 3) == 0)
 			ret = 1;
-		if (p)
-			xfree(p);
+		free(p);
 		if (ret != -1)
 			return ret;
 	}
@@ -806,8 +813,8 @@ check_host_key(char *hostname, struct sockaddr *hostaddr, u_short port,
 			ra = sshkey_fingerprint(host_key, SSH_FP_MD5,
 			    SSH_FP_RANDOMART);
 			logit("Host key fingerprint is %s\n%s\n", fp, ra);
-			xfree(ra);
-			xfree(fp);
+			free(ra);
+			free(fp);
 		}
 		break;
 	case HOST_NEW:
@@ -868,8 +875,8 @@ check_host_key(char *hostname, struct sockaddr *hostaddr, u_short port,
 			    options.visual_host_key ? "\n" : "",
 			    options.visual_host_key ? ra : "",
 			    msg2);
-			xfree(ra);
-			xfree(fp);
+			free(ra);
+			free(fp);
 			if (!confirm(msg))
 				goto fail;
 		}
@@ -1071,8 +1078,8 @@ check_host_key(char *hostname, struct sockaddr *hostaddr, u_short port,
 		}
 	}
 
-	xfree(ip);
-	xfree(host);
+	free(ip);
+	free(host);
 	if (host_hostkeys != NULL)
 		free_hostkeys(host_hostkeys);
 	if (ip_hostkeys != NULL)
@@ -1096,8 +1103,8 @@ fail:
 	}
 	if (raw_key != NULL)
 		sshkey_free(raw_key);
-	xfree(ip);
-	xfree(host);
+	free(ip);
+	free(host);
 	if (host_hostkeys != NULL)
 		free_hostkeys(host_hostkeys);
 	if (ip_hostkeys != NULL)
@@ -1114,7 +1121,7 @@ verify_host_key(char *host, struct sockaddr *hostaddr, struct sshkey *host_key)
 
 	fp = sshkey_fingerprint(host_key, SSH_FP_MD5, SSH_FP_HEX);
 	debug("Server host key: %s %s", sshkey_type(host_key), fp);
-	xfree(fp);
+	free(fp);
 
 	/* XXX certs are not yet supported for DNS */
 	if (!sshkey_is_cert(host_key) && options.verify_host_key_dns &&
@@ -1182,7 +1189,7 @@ ssh_login(struct ssh *ssh, Sensitive *sensitive, const char *orighost,
 		ssh_kex(ssh, host, hostaddr);
 		ssh_userauth1(ssh, local_user, server_user, host, sensitive);
 	}
-	xfree(local_user);
+	free(local_user);
 }
 
 int
@@ -1199,7 +1206,7 @@ ssh_put_password(struct ssh *ssh, char *password)
 	strlcpy(padded, password, size);
 	r = sshpkt_put_string(ssh, padded, size);
 	memset(padded, 0, size);
-	xfree(padded);
+	free(padded);
 	return r;
 }
 
@@ -1228,8 +1235,8 @@ show_other_keys(struct hostkeys *hostkeys, struct sshkey *key)
 		    sshkey_type(found->key), fp);
 		if (options.visual_host_key)
 			logit("%s", ra);
-		xfree(ra);
-		xfree(fp);
+		free(ra);
+		free(fp);
 		ret = 1;
 	}
 	return ret;
@@ -1252,7 +1259,7 @@ warn_changed_key(struct sshkey *host_key)
 	    sshkey_type(host_key), fp);
 	error("Please contact your system administrator.");
 
-	xfree(fp);
+	free(fp);
 }
 
 /*

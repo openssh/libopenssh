@@ -51,7 +51,7 @@ extern ServerOptions	 options;
 static int
 krb5_init(void *context)
 {
-	Authctxt *authctxt = (Authctxt *)context;
+	struct authctxt *authctxt = (struct authctxt *)context;
 	krb5_error_code problem;
 
 	if (authctxt->krb5_ctx == NULL) {
@@ -64,7 +64,7 @@ krb5_init(void *context)
 }
 
 int
-auth_krb5_password(Authctxt *authctxt, const char *password)
+auth_krb5_password(struct authctxt *authctxt, const char *password)
 {
 	krb5_error_code problem;
 	krb5_ccache ccache = NULL;
@@ -139,7 +139,7 @@ auth_krb5_password(Authctxt *authctxt, const char *password)
 }
 
 void
-krb5_cleanup_proc(Authctxt *authctxt)
+krb5_cleanup_proc(struct authctxt *authctxt)
 {
 	debug("krb5_cleanup_proc called");
 	if (authctxt->krb5_fwd_ccache) {

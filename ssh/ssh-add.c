@@ -1,4 +1,4 @@
-/* $OpenBSD: ssh-add.c,v 1.105 2012/12/05 15:42:52 markus Exp $ */
+/* $OpenBSD: ssh-add.c,v 1.106 2013/05/17 00:13:14 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -86,7 +86,7 @@ clear_pass(void)
 {
 	if (pass) {
 		memset(pass, 0, strlen(pass));
-		xfree(pass);
+		free(pass);
 		pass = NULL;
 	}
 }
@@ -236,8 +236,7 @@ add_file(int agent_fd, const char *filename, int key_only)
 				    filename, ssh_err(r));
  fail_load:
 				clear_pass();
-				if (comment)
-					xfree(comment);
+				free(comment);
 				sshbuf_free(keyblob);
 				return -1;
 			}
@@ -310,9 +309,8 @@ add_file(int agent_fd, const char *filename, int key_only)
 	if (confirm != 0)
 		fprintf(stderr, "The user must confirm each use of the key\n");
  out:
-	if (certpath != NULL)
-		xfree(certpath);
-	xfree(comment);
+	free(certpath);
+	free(comment);
 	sshkey_free(private);
 
 	return ret;
@@ -338,7 +336,7 @@ update_card(int agent_fd, int add, const char *id)
 		    add ? "add" : "remove", id, ssh_err(r));
 		ret = -1;
 	}
-	xfree(pin);
+	free(pin);
 	return ret;
 }
 
@@ -367,7 +365,7 @@ list_identities(int agent_fd, int do_fp)
 				    sshkey_size(idlist->keys[i]), fp,
 				    idlist->comments[i],
 				    sshkey_type(idlist->keys[i]));
-				xfree(fp);
+				free(fp);
 			} else {
 				if ((r = sshkey_write(idlist->keys[i],
 				    stdout)) != 0) {
@@ -403,7 +401,7 @@ lock_agent(int agent_fd, int lock)
 			passok = 0;
 		}
 		memset(p2, 0, strlen(p2));
-		xfree(p2);
+		free(p2);
 	}
 	if (passok) {
 		if ((r = ssh_lock_agent(agent_fd, lock, p1)) == 0) {
@@ -415,7 +413,7 @@ lock_agent(int agent_fd, int lock)
 		}
 	}
 	memset(p1, 0, strlen(p1));
-	xfree(p1);
+	free(p1);
 	return (ret);
 }
 

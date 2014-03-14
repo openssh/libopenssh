@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.66 2012/12/12 16:46:10 naddy Exp $
+#	$OpenBSD: Makefile,v 1.67 2013/01/17 23:00:01 djm Exp $
 
 .PATH:		${.CURDIR}/..
 
@@ -12,7 +12,7 @@ SRCS=	authfd.c authfile.c canohost.c \
 	ssh-dss.c ssh-rsa.c ssh-ecdsa.c dh.c kexdh.c kexgex.c kexecdh.c \
 	kexdhc.c kexgexc.c kexecdhc.c msg.c progressmeter.c dns.c \
 	monitor_fdpass.c umac.c addrmatch.c schnorr.c jpake.c ssh-pkcs11.c \
-	\
+	krl.c \
 	sshbuf-getput-basic.c \
 	sshbuf-getput-crypto.c \
 	sshbuf-misc.c \
@@ -42,6 +42,9 @@ install:
 
 .include "${.CURDIR}/../Makefile.inc"
 .include <bsd.own.mk>
+
+# XXX leave on while refactoring to ensure we don't break it.
+KERBEROS5=yes
 
 .if (${KERBEROS5:L} == "yes")
 CFLAGS+= -DKRB5 -I${DESTDIR}/usr/include/kerberosV

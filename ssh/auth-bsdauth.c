@@ -36,7 +36,7 @@
 #include "monitor_wrap.h"
 
 static void *
-bsdauth_init_ctx(Authctxt *authctxt)
+bsdauth_init_ctx(struct authctxt *authctxt)
 {
 	return authctxt;
 }
@@ -45,7 +45,7 @@ int
 bsdauth_query(void *ctx, char **name, char **infotxt,
    u_int *numprompts, char ***prompts, u_int **echo_on)
 {
-	Authctxt *authctxt = ctx;
+	struct authctxt *authctxt = ctx;
 	char *challenge = NULL;
 
 	if (authctxt->as != NULL) {
@@ -84,7 +84,7 @@ bsdauth_query(void *ctx, char **name, char **infotxt,
 int
 bsdauth_respond(void *ctx, u_int numresponses, char **responses)
 {
-	Authctxt *authctxt = ctx;
+	struct authctxt *authctxt = ctx;
 	int authok;
 
 	if (!authctxt->valid)
@@ -106,7 +106,7 @@ bsdauth_respond(void *ctx, u_int numresponses, char **responses)
 static void
 bsdauth_free_ctx(void *ctx)
 {
-	Authctxt *authctxt = ctx;
+	struct authctxt *authctxt = ctx;
 
 	if (authctxt && authctxt->as) {
 		auth_close(authctxt->as);
@@ -114,7 +114,7 @@ bsdauth_free_ctx(void *ctx)
 	}
 }
 
-KbdintDevice bsdauth_device = {
+struct kbdintdevice bsdauth_device = {
 	"bsdauth",
 	bsdauth_init_ctx,
 	bsdauth_query,
@@ -122,7 +122,7 @@ KbdintDevice bsdauth_device = {
 	bsdauth_free_ctx
 };
 
-KbdintDevice mm_bsdauth_device = {
+struct kbdintdevice mm_bsdauth_device = {
 	"bsdauth",
 	bsdauth_init_ctx,
 	mm_bsdauth_query,

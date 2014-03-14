@@ -35,7 +35,7 @@ enum mm_keytype {MM_NOKEY, MM_HOSTKEY, MM_USERKEY, MM_RSAHOSTKEY, MM_RSAUSERKEY}
 
 struct monitor;
 struct mm_master;
-struct Authctxt;
+struct authctxt;
 
 void mm_log_handler(LogLevel, const char *, void *);
 int mm_is_monitor(void);
@@ -44,7 +44,7 @@ int mm_sshkey_sign(struct sshkey *, u_char **, size_t *, u_char *, size_t, u_int
 void mm_inform_authserv(char *, char *);
 struct passwd *mm_getpwnamallow(const char *);
 char *mm_auth2_read_banner(void);
-int mm_auth_password(struct Authctxt *, char *);
+int mm_auth_password(struct authctxt *, char *);
 int mm_key_allowed(enum mm_keytype, char *, char *, struct sshkey *);
 int mm_user_key_allowed(struct passwd *, struct sshkey *);
 int mm_hostbased_key_allowed(struct passwd *, char *, char *, struct sshkey *);
@@ -87,7 +87,7 @@ int mm_skey_respond(void *, u_int, char **);
 
 /* jpake */
 struct modp_group;
-void mm_auth2_jpake_get_pwdata(struct Authctxt *, BIGNUM **, char **, char **);
+void mm_auth2_jpake_get_pwdata(struct authctxt *, BIGNUM **, char **, char **);
 void mm_jpake_step1(struct modp_group *, u_char **, u_int *,
     BIGNUM **, BIGNUM **, BIGNUM **, BIGNUM **,
     u_char **, u_int *, u_char **, u_int *);

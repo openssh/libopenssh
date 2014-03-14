@@ -56,7 +56,7 @@
 
 extern struct sshbuf *loginmsg;
 extern ServerOptions options;
-int sys_auth_passwd(Authctxt *, const char *);
+int sys_auth_passwd(struct authctxt *, const char *);
 
 extern login_cap_t *lc;
 
@@ -76,7 +76,7 @@ disable_forwarding(void)
  * authentication succeeds.
  */
 int
-auth_password(Authctxt *authctxt, const char *password)
+auth_password(struct authctxt *authctxt, const char *password)
 {
 	struct passwd * pw = authctxt->pw;
 	int ok = authctxt->valid;
@@ -97,7 +97,7 @@ auth_password(Authctxt *authctxt, const char *password)
 }
 
 static void
-warn_expiry(Authctxt *authctxt, auth_session_t *as)
+warn_expiry(struct authctxt *authctxt, auth_session_t *as)
 {
 	int r;
 	quad_t pwtimeleft, actimeleft, daysleft, pwwarntime, acwarntime;
@@ -129,7 +129,7 @@ warn_expiry(Authctxt *authctxt, auth_session_t *as)
 }
 
 int
-sys_auth_passwd(Authctxt *authctxt, const char *password)
+sys_auth_passwd(struct authctxt *authctxt, const char *password)
 {
 	struct passwd *pw = authctxt->pw;
 	auth_session_t *as;

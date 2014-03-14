@@ -197,7 +197,7 @@ ssh_set_verify_host_key_callback(struct ssh *ssh,
 }
 
 int
-ssh_input_append(struct ssh *ssh, const char *data, size_t len)
+ssh_input_append(struct ssh *ssh, const u_char *data, size_t len)
 {
 	return sshbuf_put(ssh_packet_get_input(ssh), data, len);
 }
@@ -250,7 +250,7 @@ ssh_packet_payload(struct ssh *ssh, size_t *lenp)
 }
 
 int
-ssh_packet_put(struct ssh *ssh, int type, const char *data, size_t len)
+ssh_packet_put(struct ssh *ssh, int type, const u_char *data, size_t len)
 {
 	int r;
 
@@ -302,7 +302,7 @@ _ssh_read_banner(struct ssh *ssh, char **bannerp)
 	*bannerp = NULL;
 	input = ssh_packet_get_input(ssh);
 	len = sshbuf_len(input);
-	s = sshbuf_ptr(input);
+	s = (const char *)sshbuf_ptr(input);
 	for (j = n = 0;;) {
 		for (i = 0; i < sizeof(buf) - 1; i++) {
 			if (j >= len)

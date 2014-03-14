@@ -1,4 +1,4 @@
-/* $OpenBSD: serverloop.c,v 1.164 2012/12/07 01:51:35 dtucker Exp $ */
+/* $OpenBSD: serverloop.c,v 1.168 2013/07/12 00:19:59 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -141,7 +141,7 @@ static void
 notify_parent(void)
 {
 	if (notify_pipe[1] != -1)
-		write(notify_pipe[1], "", 1);
+		(void)write(notify_pipe[1], "", 1);
 }
 static void
 notify_prepare(fd_set *readset)
@@ -246,7 +246,8 @@ make_packets_from_stdout_data(struct ssh *ssh)
 static void
 client_alive_check(struct ssh *ssh)
 {
-	int channel_id, r;
+	u_int channel_id;
+	int r;
 
 	/* timeout, check to see how many we have had */
 	if (ssh_packet_inc_alive_timeouts(ssh) > options.client_alive_count_max) {
@@ -258,7 +259,7 @@ client_alive_check(struct ssh *ssh)
 	 * send a bogus global/channel request with "wantreply",
 	 * we should get back a failure
 	 */
-	if ((channel_id = channel_find_open()) == -1) {
+	if ((channel_id = channel_find_open()) == CHANNEL_ID_NONE) {
 		if ((r = sshpkt_start(ssh, SSH2_MSG_GLOBAL_REQUEST)) != 0 ||
 		    (r = sshpkt_put_cstring(ssh, "keepalive@openssh.com"))
 		    != 0 ||
@@ -279,7 +280,7 @@ client_alive_check(struct ssh *ssh)
  */
 static void
 wait_until_can_do_something(struct ssh *ssh, fd_set **readsetp, fd_set **writesetp,
-    int *maxfdp, u_int *nallocp, u_int max_time_milliseconds)
+    int *maxfdp, u_int *nallocp, u_int64_t max_time_milliseconds)
 {
 	struct timeval tv, *tvp;
 	int ret;
@@ -553,7 +554,7 @@ server_loop(pid_t pid, int fdin_arg, int fdout_arg, int fderr_arg)
 	int wait_status;	/* Status returned by wait(). */
 	pid_t wait_pid;		/* pid returned by wait(). */
 	int waiting_termination = 0;	/* Have displayed waiting close message. */
-	u_int max_time_milliseconds;
+	u_int64_t max_time_milliseconds;
 	u_int previous_stdout_buffer_bytes;
 	u_int stdout_buffer_bytes;
 	int r, type;
@@ -690,7 +691,7 @@ server_loop(pid_t pid, int fdin_arg, int fdout_arg, int fderr_arg)
 				    s, strlen(s))) != 0)
 					fatal("%s: buffer error: %s",
 					    __func__, ssh_err(r));
-				xfree(cp);
+				free(cp);
 			}
 		}
 		max_fd = MAX(connection_in, connection_out);
@@ -718,10 +719,8 @@ server_loop(pid_t pid, int fdin_arg, int fdout_arg, int fderr_arg)
 		/* Process output to the client and to program stdin. */
 		process_output(ssh, writeset);
 	}
-	if (readset)
-		xfree(readset);
-	if (writeset)
-		xfree(writeset);
+	free(readset);
+	free(writeset);
 
 	/* Cleanup and termination code. */
 
@@ -822,7 +821,9 @@ void
 server_loop2(struct ssh *ssh)
 {
 	fd_set *readset = NULL, *writeset = NULL;
-	int r, rekeying = 0, max_fd, nalloc = 0;
+	int r, rekeying = 0, max_fd;
+	u_int nalloc = 0;
+	u_int64_t rekey_timeout_ms = 0;
 
 	debug("Entering interactive session for SSH2.");
 
@@ -852,8 +853,13 @@ server_loop2(struct ssh *ssh)
 
 		if (!rekeying && ssh_packet_not_very_much_data_to_write(ssh))
 			channel_output_poll();
+		if (options.rekey_interval > 0 && compat20 && !rekeying)
+			rekey_timeout_ms =
+			    ssh_packet_get_rekey_timeout(ssh) * 1000;
+		else
+			rekey_timeout_ms = 0;
 		wait_until_can_do_something(ssh, &readset, &writeset, &max_fd,
-		    &nalloc, 0);
+		    &nalloc, rekey_timeout_ms);
 
 		if (received_sigterm) {
 			logit("Exiting on signal %d", (int)received_sigterm);
@@ -880,10 +886,8 @@ server_loop2(struct ssh *ssh)
 	}
 	collect_children();
 
-	if (readset)
-		xfree(readset);
-	if (writeset)
-		xfree(writeset);
+	free(readset);
+	free(writeset);
 
 	/* free all channels, no more reads and writes */
 	channel_free_all();
@@ -985,7 +989,7 @@ server_request_direct_tcpip(struct ssh *ssh)
 	/* XXX fine grained permissions */
 	if ((options.allow_tcp_forwarding & FORWARD_LOCAL) != 0 &&
 	    !no_port_forwarding_flag) {
-		c = channel_connect_to(target, target_port,
+		c = channel_connect_to(ssh, target, target_port,
 		    "direct-tcpip", "direct-tcpip");
 	} else {
 		logit("refused local port forward: "
@@ -993,8 +997,8 @@ server_request_direct_tcpip(struct ssh *ssh)
 		    originator, originator_port, target, target_port);
 	}
 
-	xfree(originator);
-	xfree(target);
+	free(originator);
+	free(target);
 
 	return c;
 }
@@ -1003,7 +1007,8 @@ static Channel *
 server_request_tun(struct ssh *ssh)
 {
 	Channel *c = NULL;
-	int r, mode, tun, sock;
+	int r, sock;
+	u_int tun, mode;
 
 	if ((r = sshpkt_get_u32(ssh, &mode)) != 0 ||
 	    (r = sshpkt_get_u32(ssh, &tun)) != 0)
@@ -1021,15 +1026,15 @@ server_request_tun(struct ssh *ssh)
 		    "forwarding");
 		return NULL;
 	}
-	if (forced_tun_device != -1) {
-		if (tun != SSH_TUNID_ANY && forced_tun_device != tun)
+	if (forced_tun_device >= 0) {
+		if (tun != SSH_TUNID_ANY && (u_int)forced_tun_device != tun)
 			goto done;
 		tun = forced_tun_device;
 	}
 	sock = tun_open(tun, mode);
 	if (sock < 0)
 		goto done;
-	c = channel_new("tun", SSH_CHANNEL_OPEN, sock, sock, -1,
+	c = channel_new(ssh, "tun", SSH_CHANNEL_OPEN, sock, sock, -1,
 	    CHAN_TCP_WINDOW_DEFAULT, CHAN_TCP_PACKET_DEFAULT, 0, "tun", 1);
 	c->datagram = 1;
 
@@ -1061,7 +1066,7 @@ server_request_session(struct ssh *ssh)
 	 * SSH_CHANNEL_LARVAL.  Additionally, a callback for handling all
 	 * CHANNEL_REQUEST messages is registered.
 	 */
-	c = channel_new("session", SSH_CHANNEL_LARVAL,
+	c = channel_new(ssh, "session", SSH_CHANNEL_LARVAL,
 	    -1, -1, -1, /*window size*/0, CHAN_SES_PACKET_DEFAULT,
 	    0, "server-session", 1);
 	if (session_open(ssh, c->self) != 1) {
@@ -1078,8 +1083,8 @@ server_input_channel_open(int type, u_int32_t seq, struct ssh *ssh)
 {
 	Channel *c = NULL;
 	char *ctype = 0;
-	int r, rchan;
-	u_int rmaxpack, rwindow;
+	int r;
+	u_int rchan, rmaxpack, rwindow;
 	size_t len;
 
 	if ((r = sshpkt_get_cstring(ssh, &ctype, &len)) != 0 ||
@@ -1136,7 +1141,7 @@ static int
 server_input_global_request(int type, u_int32_t seq, struct ssh *ssh)
 {
 	char *rtype = NULL, *listen_address = NULL, *cancel_address = NULL;
-	char want_reply;
+	u_char want_reply;
 	u_int listen_port, cancel_port;
 	int r, success = 0, allocated_listen_port = 0;
 
@@ -1147,7 +1152,7 @@ server_input_global_request(int type, u_int32_t seq, struct ssh *ssh)
 
 	/* -R style forwarding */
 	if (strcmp(rtype, "tcpip-forward") == 0) {
-		Authctxt *authctxt = ssh->authctxt;
+		struct authctxt *authctxt = ssh->authctxt;
 
 		if (authctxt->pw == NULL || !authctxt->valid)
 			fatal("server_input_global_request: no/invalid user");
@@ -1168,7 +1173,7 @@ server_input_global_request(int type, u_int32_t seq, struct ssh *ssh)
 			    "Server has disabled port forwarding.");
 		} else {
 			/* Start listening on the port */
-			success = channel_setup_remote_fwd_listener(
+			success = channel_setup_remote_fwd_listener(ssh,
 			    listen_address, listen_port,
 			    &allocated_listen_port, options.gateway_ports);
 		}
@@ -1205,20 +1210,22 @@ static int
 server_input_channel_req(int type, u_int32_t seq, struct ssh *ssh)
 {
 	Channel *c;
-	int r, id, success = 0;
-	char *rtype = NULL, reply;
+	int r, success = 0;
+	u_int id;
+	u_char reply;
+	char *rtype = NULL;
 
 	if ((r = sshpkt_get_u32(ssh, &id)) != 0 ||
 	    (r = sshpkt_get_cstring(ssh, &rtype, NULL)) != 0 ||
 	    (r = sshpkt_get_u8(ssh, &reply)) != 0)
 		goto out;
 
-	debug("server_input_channel_req: channel %d request %s reply %d",
+	debug("server_input_channel_req: channel %u request %s reply %d",
 	    id, rtype, reply);
 
 	if ((c = channel_lookup(id)) == NULL)
 		ssh_packet_disconnect(ssh, "server_input_channel_req: "
-		    "unknown channel %d", id);
+		    "unknown channel %u", id);
 	if (!strcmp(rtype, "eow@openssh.com")) {
 		if ((r = sshpkt_get_end(ssh)) != 0)
 			goto out;

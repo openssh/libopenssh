@@ -35,7 +35,7 @@ struct Session {
 	int	self;
 	int	next_unused;
 	struct passwd *pw;
-	Authctxt *authctxt;
+	struct authctxt *authctxt;
 	pid_t	pid;
 
 	/* tty */
@@ -54,8 +54,8 @@ struct Session {
 	u_char	single_connection;
 
 	/* proto 2 */
-	int	chanid;
-	int	*x11_chanids;
+	u_int	chanid;
+	u_int	*x11_chanids;
 	int	is_subsystem;
 	u_int	num_env;
 	struct {
@@ -65,13 +65,13 @@ struct Session {
 };
 
 void	 do_authenticated(struct ssh *);
-void	 do_cleanup(Authctxt *);
+void	 do_cleanup(struct authctxt *);
 
-int	 session_open(struct ssh *, int);
+int	 session_open(struct ssh *, u_int);
 void	 session_unused(int);
 int	 session_input_channel_req(Channel *, const char *);
 void	 session_close_by_pid(pid_t, int);
-void	 session_close_by_channel(int, void *);
+void	 session_close_by_channel(u_int, void *);
 void	 session_destroy_all(void (*)(Session *));
 void	 session_pty_cleanup2(Session *);
 

@@ -1,4 +1,4 @@
-/* $OpenBSD: progressmeter.c,v 1.37 2006/08/03 03:34:42 deraadt Exp $ */
+/* $OpenBSD: progressmeter.c,v 1.39 2013/06/02 13:33:05 dtucker Exp $ */
 /*
  * Copyright (c) 2003 Nils Nordman.  All rights reserved.
  *
@@ -36,6 +36,7 @@
 
 #include "progressmeter.h"
 #include "atomicio.h"
+#include "misc.h"
 
 #define DEFAULT_WINSIZE 80
 #define MAX_WINSIZE 512
@@ -62,7 +63,7 @@ static void update_progress_meter(int);
 
 static time_t start;		/* start progress */
 static time_t last_update;	/* last progress update */
-static char *file;		/* name of the file being transferred */
+static const char *file;	/* name of the file being transferred */
 static off_t end_pos;		/* ending position of transfer */
 static off_t cur_pos;		/* transfer position as of last refresh */
 static volatile off_t *counter;	/* progress counter */
@@ -128,7 +129,7 @@ refresh_progress_meter(void)
 
 	transferred = *counter - cur_pos;
 	cur_pos = *counter;
-	now = time(NULL);
+	now = monotime();
 	bytes_left = end_pos - cur_pos;
 
 	if (bytes_left > 0)
@@ -244,9 +245,9 @@ update_progress_meter(int ignore)
 }
 
 void
-start_progress_meter(char *f, off_t filesize, off_t *ctr)
+start_progress_meter(const char *f, off_t filesize, off_t *ctr)
 {
-	start = last_update = time(NULL);
+	start = last_update = monotime();
 	file = f;
 	end_pos = filesize;
 	cur_pos = 0;

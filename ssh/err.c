@@ -119,6 +119,10 @@ ssh_err(int n)
 		return "agent not present";
 	case SSH_ERR_AGENT_NO_IDENTITIES:
 		return "agent contains no identities";
+	case SSH_ERR_KRL_BAD_MAGIC:
+		return "KRL file has invalid magic number";
+	case SSH_ERR_KEY_REVOKED:
+		return "Key is revoked";
 	default:
 		return "unknown error";
 	}

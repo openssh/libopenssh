@@ -80,8 +80,8 @@ struct monitor *monitor_init(void);
 void monitor_reinit(struct monitor *);
 void monitor_sync(struct monitor *);
 
-struct Authctxt;
-void monitor_child_preauth(struct Authctxt *, struct monitor *);
+struct authctxt;
+void monitor_child_preauth(struct authctxt *, struct monitor *);
 void monitor_child_postauth(struct monitor *);
 
 struct mon_table;

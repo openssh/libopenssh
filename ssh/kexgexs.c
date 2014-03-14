@@ -1,4 +1,4 @@
-/* $OpenBSD: kexgexs.c,v 1.14 2010/11/10 01:33:07 djm Exp $ */
+/* $OpenBSD: kexgexs.c,v 1.15 2013/05/17 00:13:13 djm Exp $ */
 /*
  * Copyright (c) 2000 Niels Provos.  All rights reserved.
  * Copyright (c) 2001 Markus Friedl.  All rights reserved.
@@ -66,7 +66,8 @@ static int
 input_kex_dh_gex_request(int type, u_int32_t seq, struct ssh *ssh)
 {
 	struct kex *kex = ssh->kex;
-	int r, min = -1, max = -1, nbits = -1;
+	int r;
+	u_int min = 0, max = 0, nbits = 0;
 
 	switch (type) {
 	case SSH2_MSG_KEX_DH_GEX_REQUEST:

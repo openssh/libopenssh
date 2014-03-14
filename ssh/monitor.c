@@ -1,4 +1,4 @@
-/* $OpenBSD: monitor.c,v 1.120 2012/12/11 22:16:21 markus Exp $ */
+/* $OpenBSD: monitor.c,v 1.126 2013/06/21 00:34:49 djm Exp $ */
 /*
  * Copyright 2002 Niels Provos <provos@citi.umich.edu>
  * Copyright 2002 Markus Friedl <markus@openbsd.org>
@@ -127,7 +127,7 @@ int mm_answer_gss_checkmic(int, struct sshbuf *);
 
 static int monitor_read_log(struct monitor *);
 
-static Authctxt *authctxt;
+static struct authctxt *authctxt;
 static BIGNUM *ssh1_challenge = NULL;	/* used for ssh1 rsa auth */
 
 /* local state for key verify */
@@ -246,7 +246,7 @@ monitor_permit_authentications(int permit)
 }
 
 void
-monitor_child_preauth(Authctxt *_authctxt, struct monitor *pmonitor)
+monitor_child_preauth(struct authctxt *_authctxt, struct monitor *pmonitor)
 {
 	struct mon_table *ent;
 	int authenticated = 0, partial = 0;
@@ -286,7 +286,7 @@ monitor_child_preauth(Authctxt *_authctxt, struct monitor *pmonitor)
 				    "with SSH protocol 1");
 			if (authenticated &&
 			    !auth2_update_methods_lists(authctxt,
-			    auth_method)) {
+			    auth_method, auth_submethod)) {
 				debug3("%s: method %s: partial", __func__,
 				    auth_method);
 				authenticated = 0;
@@ -304,8 +304,7 @@ monitor_child_preauth(Authctxt *_authctxt, struct monitor *pmonitor)
 		}
 		if (ent->flags & (MON_AUTHDECIDE|MON_ALOG)) {
 			auth_log(authctxt, authenticated, partial,
-			    auth_method, auth_submethod,
-			    compat20 ? " ssh2" : "");
+			    auth_method, auth_submethod);
 			if (!authenticated)
 				authctxt->failures++;
 		}
@@ -459,7 +458,7 @@ monitor_read_log(struct monitor *pmonitor)
 	do_log2(level, "%s [preauth]", msg);
 
 	sshbuf_free(logmsg);
-	xfree(msg);
+	free(msg);
 
 	return 0;
 }
@@ -552,12 +551,9 @@ static void
 monitor_reset_key_state(void)
 {
 	/* reset state */
-	if (key_blob != NULL)
-		xfree(key_blob);
-	if (hostbased_cuser != NULL)
-		xfree(hostbased_cuser);
-	if (hostbased_chost != NULL)
-		xfree(hostbased_chost);
+	free(key_blob);
+	free(hostbased_cuser);
+	free(hostbased_chost);
 	key_blob = NULL;
 	key_bloblen = 0;
 	key_blobtype = MM_NOKEY;
@@ -611,7 +607,8 @@ mm_answer_sign(int sock, struct sshbuf *m)
 	u_char *p;
 	u_char *signature;
 	size_t datlen, siglen;
-	int keyid, r;
+	u_int keyid;
+	int r;
 
 	debug3("%s", __func__);
 
@@ -645,8 +642,8 @@ mm_answer_sign(int sock, struct sshbuf *m)
 	if ((r = sshbuf_put_string(m, signature, siglen)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
 
-	xfree(p);
-	xfree(signature);
+	free(p);
+	free(signature);
 
 	mm_request_send(sock, MONITOR_ANS_SIGN, m);
 
@@ -678,7 +675,7 @@ mm_answer_pwnamallow(int sock, struct sshbuf *m)
 
 	authctxt->user = xstrdup(username);
 	setproctitle("%s [priv]", pwent ? username : "unknown");
-	xfree(username);
+	free(username);
 
 	sshbuf_reset(m);
 
@@ -759,9 +756,7 @@ int mm_answer_auth2_read_banner(int sock, struct sshbuf *m)
 	if ((r = sshbuf_put_cstring(m, banner != NULL ? banner : "")) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
 	mm_request_send(sock, MONITOR_ANS_AUTH2_READ_BANNER, m);
-
-	if (banner != NULL)
-		xfree(banner);
+	free(banner);
 
 	return (0);
 }
@@ -780,7 +775,7 @@ mm_answer_authserv(int sock, struct sshbuf *m)
 	    __func__, authctxt->service, authctxt->style);
 
 	if (strlen(authctxt->style) == 0) {
-		xfree(authctxt->style);
+		free(authctxt->style);
 		authctxt->style = NULL;
 	}
 
@@ -800,8 +795,8 @@ mm_answer_authpassword(int sock, struct sshbuf *m)
 	/* Only authenticate if the context is valid */
 	authenticated = options.password_authentication &&
 	    auth_password(authctxt, passwd);
-	bzero(passwd, plen);
-	xfree(passwd);
+	memset(passwd, 0, strlen(passwd));
+	free(passwd);
 
 	sshbuf_reset(m);
 	if ((r = sshbuf_put_u32(m, authenticated)) != 0)
@@ -839,10 +834,10 @@ mm_answer_bsdauthquery(int sock, struct sshbuf *m)
 	mm_request_send(sock, MONITOR_ANS_BSDAUTHQUERY, m);
 
 	if (success) {
-		xfree(name);
-		xfree(infotxt);
-		xfree(prompts);
-		xfree(echo_on);
+		free(name);
+		free(infotxt);
+		free(prompts);
+		free(echo_on);
 	}
 
 	return (0);
@@ -863,7 +858,7 @@ mm_answer_bsdauthrespond(int sock, struct sshbuf *m)
 	    auth_userresponse(authctxt->as, response, 0);
 	authctxt->as = NULL;
 	debug3("%s: <%s> = <%d>", __func__, response, authok);
-	xfree(response);
+	free(response);
 
 	sshbuf_reset(m);
 	if ((r = sshbuf_put_u32(m, authok)) != 0)
@@ -872,9 +867,10 @@ mm_answer_bsdauthrespond(int sock, struct sshbuf *m)
 	debug3("%s: sending authenticated: %d", __func__, authok);
 	mm_request_send(sock, MONITOR_ANS_BSDAUTHRESPOND, m);
 
-	if (compat20)
-		auth_method = "keyboard-interactive"; /* XXX auth_submethod */
-	else
+	if (compat20) {
+		auth_method = "keyboard-interactive";
+		auth_submethod = "bsdauth";
+	} else
 		auth_method = "bsdauth";
 
 	return (authok != 0);
@@ -910,6 +906,7 @@ mm_answer_keyallowed(int sock, struct sshbuf *m)
 		case MM_USERKEY:
 			allowed = options.pubkey_authentication &&
 			    user_key_allowed(authctxt->pw, key);
+			pubkey_auth_info(authctxt, key, NULL);
 			auth_method = "publickey";
 			if (options.pubkey_authentication && allowed != 1)
 				auth_clear_options();
@@ -918,6 +915,9 @@ mm_answer_keyallowed(int sock, struct sshbuf *m)
 			allowed = options.hostbased_authentication &&
 			    hostbased_key_allowed(authctxt->pw,
 			    cuser, chost, key);
+			pubkey_auth_info(authctxt, key,
+			    "client user \"%.100s\", client host \"%.100s\"",
+			    cuser, chost);
 			auth_method = "hostbased";
 			break;
 		case MM_RSAHOSTKEY:
@@ -949,11 +949,10 @@ mm_answer_keyallowed(int sock, struct sshbuf *m)
 		hostbased_chost = chost;
 	} else {
 		/* Log failed attempt */
-		auth_log(authctxt, 0, 0, auth_method, NULL,
-		    compat20 ? " ssh2" : "");
-		xfree(blob);
-		xfree(cuser);
-		xfree(chost);
+		auth_log(authctxt, 0, 0, auth_method, NULL);
+		free(blob);
+		free(cuser);
+		free(chost);
 	}
 
 	debug3("%s: key %p is %s",
@@ -980,7 +979,7 @@ monitor_valid_userblob(u_char *data, u_int datalen)
 	const u_char *cp;
 	size_t len;
 	int r, fail = 0;
-	char *username, *methodname;
+	char *username, *methodname, *userstyle;
 
 	if ((b = sshbuf_from(data, datalen)) == NULL)
 		fatal("%s: sshbuf_from failed", __func__);
@@ -1001,20 +1000,24 @@ monitor_valid_userblob(u_char *data, u_int datalen)
 		    (len != session_id2_len) ||
 		    (timingsafe_bcmp(p, session_id2, session_id2_len) != 0))
 			fail++;
-		xfree(p);
+		free(p);
 	}
 	if ((r = sshbuf_get_u8(b, &c)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
 	if (c != SSH2_MSG_USERAUTH_REQUEST)
 		fail++;
+	xasprintf(&userstyle, "%s%s%s", authctxt->user,
+	    authctxt->style ? ":" : "",
+	    authctxt->style ? authctxt->style : "");
 	if ((r = sshbuf_get_cstring(b, &username, NULL)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
-	if (strcmp(authctxt->user, username) != 0) {
+	if (strcmp(userstyle, username) != 0) {
 		logit("wrong user name sent to monitor: expected %s != %.100s",
-		    authctxt->user, username);
+		    userstyle, username);
 		fail++;
 	}
-	xfree(username);
+	free(username);
+	free(userstyle);
 	if ((r = sshbuf_skip_string(b)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
 	if (active_state->compat & SSH_BUG_PKAUTH) {
@@ -1027,7 +1030,7 @@ monitor_valid_userblob(u_char *data, u_int datalen)
 			fatal("%s: buffer error: %s", __func__, ssh_err(r));
 		if (strcmp("publickey", methodname) != 0)
 			fail++;
-		xfree(methodname);
+		free(methodname);
 		if ((r = sshbuf_get_u8(b, &c)) != 0)
 			fatal("%s: buffer error: %s", __func__, ssh_err(r));
 		if (!c)
@@ -1048,7 +1051,7 @@ monitor_valid_hostbasedblob(u_char *data, u_int datalen, char *cuser,
     char *chost)
 {
 	struct sshbuf *b;
-	char *username, *methodname, *rawhost, *ruser;
+	char *username, *methodname, *rawhost, *ruser, *userstyle;
 	u_char *sid, c;
 	size_t len;
 	int r, fail = 0;
@@ -1062,7 +1065,7 @@ monitor_valid_hostbasedblob(u_char *data, u_int datalen, char *cuser,
 	    (len != session_id2_len) ||
 	    (timingsafe_bcmp(sid, session_id2, session_id2_len) != 0))
 		fail++;
-	xfree(sid);
+	free(sid);
 
 	if ((r = sshbuf_get_u8(b, &c)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
@@ -1070,18 +1073,22 @@ monitor_valid_hostbasedblob(u_char *data, u_int datalen, char *cuser,
 		fail++;
 	if ((r = sshbuf_get_cstring(b, &username, NULL)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
-	if (strcmp(authctxt->user, username) != 0) {
+	xasprintf(&userstyle, "%s%s%s", authctxt->user,
+	    authctxt->style ? ":" : "",
+	    authctxt->style ? authctxt->style : "");
+	if (strcmp(userstyle, username) != 0) {
 		logit("wrong user name sent to monitor: expected %s != %.100s",
-		    authctxt->user, username);
+		    userstyle, username);
 		fail++;
 	}
-	xfree(username);
+	free(userstyle);
+	free(username);
 	if ((r = sshbuf_skip_string(b)) != 0 || /* service */
 	    (r = sshbuf_get_cstring(b, &methodname, NULL)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
 	if (strcmp("hostbased", methodname) != 0)
 		fail++;
-	xfree(methodname);
+	free(methodname);
 	if ((r = sshbuf_skip_string(b)) != 0 ||	/* pkalg */
 	    (r = sshbuf_skip_string(b)) != 0)	/* pkblob */
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
@@ -1093,14 +1100,14 @@ monitor_valid_hostbasedblob(u_char *data, u_int datalen, char *cuser,
 		rawhost[len - 1] = '\0';
 	if (strcmp(rawhost, chost) != 0)
 		fail++;
-	xfree(rawhost);
+	free(rawhost);
 
 	/* verify client user */
 	if ((r = sshbuf_get_cstring(b, &ruser, NULL)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
 	if (strcmp(ruser, cuser) != 0)
 		fail++;
-	xfree(ruser);
+	free(ruser);
 
 	if (sshbuf_len(b) != 0)
 		fail++;
@@ -1149,9 +1156,9 @@ mm_answer_keyverify(int sock, struct sshbuf *m)
 	    __func__, key, (r == 0) ? "verified" : "unverified");
 
 	sshkey_free(key);
-	xfree(blob);
-	xfree(signature);
-	xfree(data);
+	free(blob);
+	free(signature);
+	free(data);
 
 	auth_method = key_blobtype == MM_USERKEY ? "publickey" : "hostbased";
 
@@ -1287,7 +1294,7 @@ mm_answer_pty_cleanup(int sock, struct sshbuf *m)
 	if ((s = session_by_tty(tty)) != NULL)
 		mm_session_close(s);
 	sshbuf_reset(m);
-	xfree(tty);
+	free(tty);
 	return (0);
 }
 
@@ -1429,7 +1436,7 @@ mm_answer_rsa_challenge(int sock, struct sshbuf *m)
 
 	monitor_permit(mon_dispatch, MONITOR_REQ_RSARESPONSE, 1);
 
-	xfree(blob);
+	free(blob);
 	sshkey_free(key);
 	return (0);
 }
@@ -1463,9 +1470,9 @@ mm_answer_rsa_response(int sock, struct sshbuf *m)
 		fatal("%s: received bad response to challenge", __func__);
 	success = auth_rsa_verify_response(key, ssh1_challenge, response);
 
-	xfree(blob);
+	free(blob);
 	sshkey_free(key);
-	xfree(response);
+	free(response);
 
 	auth_method = key_blobtype == MM_RSAUSERKEY ? "rsa" : "rhosts-rsa";
 
@@ -1534,6 +1541,10 @@ monitor_apply_keystate(struct monitor *pmonitor)
 		    (ssh_packet_comp_alloc_func *)mm_zalloc,
 		    (ssh_packet_comp_free_func *)mm_zfree);
 	}
+	if (options.rekey_limit || options.rekey_interval)
+		ssh_packet_set_rekey_limits(ssh,
+		    (u_int32_t)options.rekey_limit,
+		    (time_t)options.rekey_interval);
 	debug3("%s: done", __func__);
 }
 
@@ -1631,7 +1642,7 @@ mm_answer_gss_setup_ctx(int sock, struct sshbuf *m)
 
 	major = ssh_gssapi_server_ctx(&gsscontext, &goid);
 
-	xfree(goid.elements);
+	free(goid.elements);
 
 	sshbuf_reset(m);
 	if ((r = sshbuf_put_u32(m, major)) != 0)
@@ -1661,7 +1672,7 @@ mm_answer_gss_accept_ctx(int sock, struct sshbuf *m)
 	in.value = p;
 	in.length = len;
 	major = ssh_gssapi_accept_ctx(gsscontext, &in, &out, &flags);
-	xfree(in.value);
+	free(in.value);
 
 	sshbuf_reset(m);
 	if ((r = sshbuf_put_u32(m, major)) != 0 ||
@@ -1700,8 +1711,8 @@ mm_answer_gss_checkmic(int sock, struct sshbuf *m)
 
 	ret = ssh_gssapi_checkmic(gsscontext, &gssbuf, &mic);
 
-	xfree(gssbuf.value);
-	xfree(mic.value);
+	free(gssbuf.value);
+	free(mic.value);
 
 	sshbuf_reset(m);
 	if ((r = sshbuf_put_u32(m, ret)) != 0)
@@ -1776,8 +1787,8 @@ mm_answer_jpake_step1(int sock, struct sshbuf *m)
 
 	bzero(x3_proof, x3_proof_len);
 	bzero(x4_proof, x4_proof_len);
-	xfree(x3_proof);
-	xfree(x4_proof);
+	free(x3_proof);
+	free(x4_proof);
 
 	monitor_permit(mon_dispatch, MONITOR_REQ_JPAKE_GET_PWDATA, 1);
 	monitor_permit(mon_dispatch, MONITOR_REQ_JPAKE_STEP1, 0);
@@ -1808,8 +1819,8 @@ mm_answer_jpake_get_pwdata(int sock, struct sshbuf *m)
 
 	bzero(hash_scheme, strlen(hash_scheme));
 	bzero(salt, strlen(salt));
-	xfree(hash_scheme);
-	xfree(salt);
+	free(hash_scheme);
+	free(salt);
 
 	monitor_permit(mon_dispatch, MONITOR_REQ_JPAKE_STEP2, 1);
 
@@ -1852,8 +1863,8 @@ mm_answer_jpake_step2(int sock, struct sshbuf *m)
 
 	bzero(x1_proof, x1_proof_len);
 	bzero(x2_proof, x2_proof_len);
-	xfree(x1_proof);
-	xfree(x2_proof);
+	free(x1_proof);
+	free(x2_proof);
 
 	sshbuf_reset(m);
 
@@ -1865,7 +1876,7 @@ mm_answer_jpake_step2(int sock, struct sshbuf *m)
 	mm_request_send(sock, MONITOR_ANS_JPAKE_STEP2, m);
 
 	bzero(x4_s_proof, x4_s_proof_len);
-	xfree(x4_s_proof);
+	free(x4_s_proof);
 
 	monitor_permit(mon_dispatch, MONITOR_REQ_JPAKE_KEY_CONFIRM, 1);
 
@@ -1939,7 +1950,7 @@ mm_answer_jpake_check_confirm(int sock, struct sshbuf *m)
 	JPAKE_DEBUG_CTX((pctx, "check_confirm done in %s", __func__));
 
 	bzero(peer_confirm_hash, peer_confirm_hash_len);
-	xfree(peer_confirm_hash);
+	free(peer_confirm_hash);
 
 	sshbuf_reset(m);
 	if ((r = sshbuf_put_u32(m, authenticated)) != 0)

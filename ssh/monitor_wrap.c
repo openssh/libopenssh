@@ -1,4 +1,4 @@
-/* $OpenBSD: monitor_wrap.c,v 1.74 2012/10/01 13:59:51 naddy Exp $ */
+/* $OpenBSD: monitor_wrap.c,v 1.76 2013/05/17 00:13:13 djm Exp $ */
 /*
  * Copyright 2002 Niels Provos <provos@citi.umich.edu>
  * Copyright 2002 Markus Friedl <markus@openbsd.org>
@@ -101,7 +101,8 @@ mm_log_handler(LogLevel level, const char *msg, void *ctx)
 	    (r = sshbuf_put_cstring(log_msg, msg)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
 	POKE_U32(sshbuf_ptr(log_msg), sshbuf_len(log_msg) - 4);
-	if (atomicio(vwrite, mon->m_log_sendfd, (u_char *)sshbuf_ptr(log_msg),
+	if (atomicio(vwrite, mon->m_log_sendfd,
+	    (u_char *)sshbuf_ptr(log_msg),
 	    sshbuf_len(log_msg)) != sshbuf_len(log_msg))
 		fatal("%s: write: %s", __func__, strerror(errno));
 	sshbuf_free(log_msg);
@@ -308,7 +309,7 @@ out:
 #undef M_CP_STRARRAYOPT
 
 	copy_set_server_options(&options, newopts, 1);
-	xfree(newopts);
+	free(newopts);
 
 	sshbuf_free(m);
 
@@ -337,7 +338,7 @@ mm_auth2_read_banner(void)
 
 	/* treat empty banner as missing banner */
 	if (strlen(banner) == 0) {
-		xfree(banner);
+		free(banner);
 		banner = NULL;
 	}
 	return (banner);
@@ -366,10 +367,11 @@ mm_inform_authserv(char *service, char *style)
 
 /* Do the password authentication */
 int
-mm_auth_password(Authctxt *authctxt, char *password)
+mm_auth_password(struct authctxt *authctxt, char *password)
 {
 	struct sshbuf *m;
-	int r, authenticated = 0;
+	int r;
+	u_int authenticated = 0;
 
 	debug3("%s entering", __func__);
 
@@ -424,7 +426,8 @@ mm_key_allowed(enum mm_keytype type, char *user, char *host,
 	struct sshbuf *m;
 	u_char *blob;
 	size_t len;
-	int r, allowed = 0, have_forced = 0;
+	int r;
+	u_int allowed = 0, have_forced = 0;
 
 	debug3("%s entering", __func__);
 
@@ -441,7 +444,7 @@ mm_key_allowed(enum mm_keytype type, char *user, char *host,
 	    (r = sshbuf_put_cstring(m, host ? host : "")) != 0 ||
 	    (r = sshbuf_put_string(m, blob, len)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
-	xfree(blob);
+	free(blob);
 
 	mm_request_send(pmonitor->m_recvfd, MONITOR_REQ_KEYALLOWED, m);
 
@@ -475,7 +478,8 @@ mm_sshkey_verify(struct sshkey *key, u_char *sig, size_t siglen,
 	struct sshbuf *m;
 	u_char *blob;
 	size_t len;
-	int r, verified = 0;
+	int r;
+	u_int verified = 0;
 
 	debug3("%s entering", __func__);
 
@@ -493,7 +497,7 @@ mm_sshkey_verify(struct sshkey *key, u_char *sig, size_t siglen,
 	    (r = sshbuf_put_string(m, sig, siglen)) != 0 ||
 	    (r = sshbuf_put_string(m, data, datalen)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
-	xfree(blob);
+	free(blob);
 
 	mm_request_send(pmonitor->m_recvfd, MONITOR_REQ_KEYVERIFY, m);
 
@@ -530,7 +534,8 @@ mm_pty_allocate(int *ptyfd, int *ttyfd, char *namebuf, size_t namebuflen)
 {
 	struct sshbuf *m;
 	char *p, *msg;
-	int r, success = 0, tmp1 = -1, tmp2 = -1;
+	int r, tmp1 = -1, tmp2 = -1;
+	u_int success = 0;
 
 	/* Kludge: ensure there are fds free to receive the pty/tty */
 	if ((tmp1 = dup(pmonitor->m_recvfd)) == -1 ||
@@ -565,11 +570,11 @@ mm_pty_allocate(int *ptyfd, int *ttyfd, char *namebuf, size_t namebuflen)
 	sshbuf_free(m);
 
 	strlcpy(namebuf, p, namebuflen); /* Possible truncation */
-	xfree(p);
+	free(p);
 
 	if ((r = sshbuf_put(loginmsg, msg, strlen(msg))) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
-	xfree(msg);
+	free(msg);
 
 	if ((*ptyfd = mm_receive_fd(pmonitor->m_recvfd)) == -1 ||
 	    (*ttyfd = mm_receive_fd(pmonitor->m_recvfd)) == -1)
@@ -619,7 +624,8 @@ mm_terminate(void)
 int
 mm_ssh1_session_key(BIGNUM *num)
 {
-	int r, rsafail;
+	int r;
+	u_int rsafail;
 	struct sshbuf *m;
 
 	if ((m = sshbuf_new()) == NULL)
@@ -693,7 +699,8 @@ int
 mm_bsdauth_respond(void *ctx, u_int numresponses, char **responses)
 {
 	struct sshbuf *m;
-	int r, authok;
+	int r;
+	u_int authok;
 
 	debug3("%s: entering", __func__);
 	if (numresponses != 1)
@@ -738,7 +745,8 @@ mm_auth_rsa_key_allowed(struct passwd *pw, BIGNUM *client_n,
 	struct sshkey *key;
 	u_char *blob;
 	size_t blen;
-	int r, allowed = 0, have_forced = 0;
+	int r;
+	u_int allowed = 0, have_forced = 0;
 
 	debug3("%s entering", __func__);
 
@@ -767,7 +775,7 @@ mm_auth_rsa_key_allowed(struct passwd *pw, BIGNUM *client_n,
 			fatal("%s: key_from_blob failed: %s",
 			    __func__, ssh_err(r));
 		*rkey = key;
-		xfree(blob);
+		free(blob);
 	}
 	sshbuf_free(m);
 
@@ -797,7 +805,7 @@ mm_auth_rsa_generate_challenge(struct sshkey *key)
 		fatal("%s: sshbuf_new failed", __func__);
 	if ((r = sshbuf_put_string(m, blob, blen)) != 0)
 		fatal("%s: E buffer error: %s", __func__, ssh_err(r));
-	xfree(blob);
+	free(blob);
 
 	mm_request_send(pmonitor->m_recvfd, MONITOR_REQ_RSACHALLENGE, m);
 	mm_request_receive_expect(pmonitor->m_recvfd, MONITOR_ANS_RSACHALLENGE, m);
@@ -815,7 +823,8 @@ mm_auth_rsa_verify_response(struct sshkey *key, BIGNUM *p, u_char response[16])
 	struct sshbuf *m;
 	u_char *blob;
 	size_t blen;
-	int r, success = 0;
+	int r;
+	u_int success = 0;
 
 	debug3("%s entering", __func__);
 
@@ -830,7 +839,7 @@ mm_auth_rsa_verify_response(struct sshkey *key, BIGNUM *p, u_char response[16])
 	    (r = sshbuf_put_string(m, response, 16)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
 
-	xfree(blob);
+	free(blob);
 
 	mm_request_send(pmonitor->m_recvfd, MONITOR_REQ_RSARESPONSE, m);
 	mm_request_receive_expect(pmonitor->m_recvfd, MONITOR_ANS_RSARESPONSE, m);
@@ -928,7 +937,8 @@ int
 mm_ssh_gssapi_userok(char *user)
 {
 	struct sshbuf *m;
-	int r, authenticated = 0;
+	int r;
+	u_int authenticated = 0;
 
 	if ((m = sshbuf_new()) == NULL)
 		fatal("%s: sshbuf_new failed", __func__);
@@ -949,7 +959,7 @@ mm_ssh_gssapi_userok(char *user)
 
 #ifdef JPAKE
 void
-mm_auth2_jpake_get_pwdata(Authctxt *authctxt, BIGNUM **s,
+mm_auth2_jpake_get_pwdata(struct authctxt *authctxt, BIGNUM **s,
     char **hash_scheme, char **salt)
 {
 	struct sshbuf *m;

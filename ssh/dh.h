@@ -41,7 +41,7 @@ DH	*dh_new_group14(void);
 int	 dh_gen_key(DH *, int);
 int	 dh_pub_is_valid(DH *, BIGNUM *);
 
-int	 dh_estimate(int);
+u_int	 dh_estimate(int);
 
 #define DH_GRP_MIN	1024
 #define DH_GRP_MAX	8192

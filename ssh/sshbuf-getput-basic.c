@@ -262,7 +262,7 @@ sshbuf_putfv(struct sshbuf *buf, const char *fmt, va_list ap)
 	va_copy(ap2, ap);
 	if ((r = sshbuf_reserve(buf, (size_t)len + 1, &p)) < 0)
 		goto out;
-	if ((r = vsnprintf(p, len + 1, fmt, ap2)) != len) {
+	if ((r = vsnprintf((char *)p, len + 1, fmt, ap2)) != len) {
 		r = SSH_ERR_INTERNAL_ERROR;
 		goto out; /* Shouldn't happen */
 	}

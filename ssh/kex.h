@@ -1,4 +1,4 @@
-/* $OpenBSD: kex.h,v 1.53 2012/12/11 22:31:18 markus Exp $ */
+/* $OpenBSD: kex.h,v 1.55 2013/04/19 01:06:50 djm Exp $ */
 
 /*
  * Copyright (c) 2000, 2001 Markus Friedl.  All rights reserved.
@@ -41,8 +41,9 @@
 #define	KEX_DHGEX_SHA1		"diffie-hellman-group-exchange-sha1"
 #define	KEX_DHGEX_SHA256	"diffie-hellman-group-exchange-sha256"
 #define	KEX_RESUME		"resume@appgate.com"
-/* The following represents the family of ECDH methods */
-#define	KEX_ECDH_SHA2_STEM	"ecdh-sha2-"
+#define	KEX_ECDH_SHA2_NISTP256	"ecdh-sha2-nistp256"
+#define	KEX_ECDH_SHA2_NISTP384	"ecdh-sha2-nistp384"
+#define	KEX_ECDH_SHA2_NISTP521	"ecdh-sha2-nistp521"
 
 #define COMP_NONE	0
 #define COMP_ZLIB	1
@@ -81,15 +82,16 @@ enum kex_exchange {
 
 struct sshenc {
 	char	*name;
-	struct sshcipher *cipher;
+	const struct sshcipher *cipher;
 	int	enabled;
 	u_int	key_len;
+	u_int	iv_len;
 	u_int	block_size;
 	u_char	*key;
 	u_char	*iv;
 };
 struct sshcomp {
-	int	type;
+	u_int	type;
 	int	enabled;
 	char	*name;
 };
@@ -109,13 +111,14 @@ struct kex {
 	int	server;
 	char	*name;
 	int	hostkey_type;
-	int	kex_type;
+	u_int	kex_type;
 	int	roaming;
 	struct sshbuf *my;
 	struct sshbuf *peer;
 	sig_atomic_t done;
-	int	flags;
+	u_int	flags;
 	const EVP_MD *evp_md;
+	int	ec_nid;
 	char	*client_version_string;
 	char	*server_version_string;
 	int	(*verify_host_key)(struct sshkey *, struct ssh *);
@@ -125,12 +128,13 @@ struct kex {
 	int	(*kex[KEX_MAX])(struct ssh *);
 	/* kex specific state */
 	DH	*dh;			/* DH */
-	int	min, max, nbits;	/* GEX */
+	u_int	min, max, nbits;	/* GEX */
 	EC_KEY	*ec_client_key;		/* ECÐH */
 	const EC_GROUP *ec_group;	/* ECÐH */
 };
 
 int	 kex_names_valid(const char *);
+char	*kex_alg_list(void);
 
 int	 kex_new(struct ssh *, char *[PROPOSAL_MAX], struct kex **);
 int	 kex_setup(struct ssh *, char *[PROPOSAL_MAX]);
@@ -158,14 +162,14 @@ int	 kex_dh_hash(const char *, const char *,
     const BIGNUM *, const BIGNUM *, const BIGNUM *, u_char **, size_t *);
 
 int	 kexgex_hash(const EVP_MD *, const char *, const char *,
-    const char *, size_t, const char *, size_t, const u_char *, size_t,
+    const u_char *, size_t, const u_char *, size_t, const u_char *, size_t,
     int, int, int,
     const BIGNUM *, const BIGNUM *, const BIGNUM *,
     const BIGNUM *, const BIGNUM *,
     u_char **, size_t *);
 
 int kex_ecdh_hash(const EVP_MD *, const EC_GROUP *, const char *, const char *,
-    const char *, size_t, const char *, size_t, const u_char *, size_t,
+    const u_char *, size_t, const u_char *, size_t, const u_char *, size_t,
     const EC_POINT *, const EC_POINT *, const BIGNUM *, u_char **, size_t *);
 
 int	kex_ecdh_name_to_nid(const char *);

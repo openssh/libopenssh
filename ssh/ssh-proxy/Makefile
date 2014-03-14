@@ -11,5 +11,5 @@ SRCS=	ssh-proxy.c readconf.c
 
 .include <bsd.prog.mk>
 
-DPADD+=	${LIBCRYPTO} ${LIBZ} ${LIBEVENT}
-LDADD+=	-lcrypto -lz -levent
+DPADD+=	${LIBCRYPTO} ${LIBUTIL} ${LIBZ} ${LIBEVENT}
+LDADD+=	-lcrypto -lutil -lz -levent

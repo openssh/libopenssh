@@ -1,4 +1,4 @@
-/* $OpenBSD: auth2-hostbased.c,v 1.14 2010/08/04 05:42:47 djm Exp $ */
+/* $OpenBSD: auth2-hostbased.c,v 1.16 2013/06/21 00:34:49 djm Exp $ */
 /*
  * Copyright (c) 2000 Markus Friedl.  All rights reserved.
  *
@@ -56,7 +56,7 @@ extern u_int session_id2_len;
 static int
 userauth_hostbased(struct ssh *ssh)
 {
-	Authctxt *authctxt = ssh->authctxt;
+	struct authctxt *authctxt = ssh->authctxt;
 	struct sshbuf *b;
 	struct sshkey *key = NULL;
 	char *pkalg, *cuser, *chost, *service;
@@ -122,6 +122,10 @@ userauth_hostbased(struct ssh *ssh)
 #ifdef DEBUG_PK
 	sshbuf_dump(b, stderr);
 #endif
+
+	pubkey_auth_info(authctxt, key,
+	    "client user \"%.100s\", client host \"%.100s\"", cuser, chost);
+
 	/* test for allowed key and correct signature */
 	authenticated = 0;
 	if (PRIVSEP(hostbased_key_allowed(authctxt->pw, cuser, chost, key)) &&
@@ -134,11 +138,11 @@ done:
 	debug2("%s: authenticated %d", __func__, authenticated);
 	if (key != NULL)
 		sshkey_free(key);
-	xfree(pkalg);
-	xfree(pkblob);
-	xfree(cuser);
-	xfree(chost);
-	xfree(sig);
+	free(pkalg);
+	free(pkblob);
+	free(cuser);
+	free(chost);
+	free(sig);
 	return authenticated;
 }
 
@@ -213,13 +217,13 @@ hostbased_key_allowed(struct passwd *pw, const char *cuser, char *chost,
 			verbose("Accepted %s public key %s from %s@%s",
 			    sshkey_type(key), fp, cuser, lookup);
 		}
-		xfree(fp);
+		free(fp);
 	}
 
 	return (host_status == HOST_OK);
 }
 
-Authmethod method_hostbased = {
+struct authmethod method_hostbased = {
 	"hostbased",
 	userauth_hostbased,
 	&options.hostbased_authentication

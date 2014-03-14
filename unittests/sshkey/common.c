@@ -71,7 +71,7 @@ load_bignum(const char *name)
 	struct sshbuf *buf;
 
 	buf = load_text_file(name);
-	ASSERT_INT_NE(BN_hex2bn(&ret, sshbuf_ptr(buf)), 0);
+	ASSERT_INT_NE(BN_hex2bn(&ret, (const char *)sshbuf_ptr(buf)), 0);
 	sshbuf_free(buf);
 	return ret;
 }

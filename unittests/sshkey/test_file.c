@@ -56,8 +56,8 @@ sshkey_file_tests(void)
 
 	TEST_START("parse RSA1 from private w/ passphrase");
 	buf = load_file("rsa1_1_pw");
-	ASSERT_INT_EQ(sshkey_parse_private(buf, sshbuf_ptr(pw), "rsa1_1_pw",
-	    &k2, NULL), 0);
+	ASSERT_INT_EQ(sshkey_parse_private(buf,
+	    (const char *)sshbuf_ptr(pw), "rsa1_1_pw", &k2, NULL), 0);
 	sshbuf_free(buf);
 	ASSERT_PTR_NE(k2, NULL);
 	ASSERT_INT_EQ(sshkey_equal(k1, k2), 1);
@@ -76,7 +76,7 @@ sshkey_file_tests(void)
 	buf = load_text_file("rsa1_1.fp");
 	cp = sshkey_fingerprint(k1, SSH_FP_MD5, SSH_FP_HEX);
 	ASSERT_PTR_NE(cp, NULL);
-	ASSERT_STRING_EQ(cp, sshbuf_ptr(buf));
+	ASSERT_STRING_EQ(cp, (const char *)sshbuf_ptr(buf));
 	sshbuf_free(buf);
 	free(cp);
 	TEST_DONE();
@@ -85,7 +85,7 @@ sshkey_file_tests(void)
 	buf = load_text_file("rsa1_1.fp.bb");
 	cp = sshkey_fingerprint(k1, SSH_FP_SHA1, SSH_FP_BUBBLEBABBLE);
 	ASSERT_PTR_NE(cp, NULL);
-	ASSERT_STRING_EQ(cp, sshbuf_ptr(buf));
+	ASSERT_STRING_EQ(cp, (const char *)sshbuf_ptr(buf));
 	sshbuf_free(buf);
 	free(cp);
 	TEST_DONE();
@@ -110,8 +110,8 @@ sshkey_file_tests(void)
 
 	TEST_START("parse RSA from private w/ passphrase");
 	buf = load_file("rsa_1_pw");
-	ASSERT_INT_EQ(sshkey_parse_private(buf, sshbuf_ptr(pw), "rsa_1_pw",
-	    &k2, NULL), 0);
+	ASSERT_INT_EQ(sshkey_parse_private(buf,
+	    (const char *)sshbuf_ptr(pw), "rsa_1_pw", &k2, NULL), 0);
 	sshbuf_free(buf);
 	ASSERT_PTR_NE(k2, NULL);
 	ASSERT_INT_EQ(sshkey_equal(k1, k2), 1);
@@ -139,7 +139,7 @@ sshkey_file_tests(void)
 	buf = load_text_file("rsa_1.fp");
 	cp = sshkey_fingerprint(k1, SSH_FP_MD5, SSH_FP_HEX);
 	ASSERT_PTR_NE(cp, NULL);
-	ASSERT_STRING_EQ(cp, sshbuf_ptr(buf));
+	ASSERT_STRING_EQ(cp, (const char *)sshbuf_ptr(buf));
 	sshbuf_free(buf);
 	free(cp);
 	TEST_DONE();
@@ -148,7 +148,7 @@ sshkey_file_tests(void)
 	buf = load_text_file("rsa_1.fp.bb");
 	cp = sshkey_fingerprint(k1, SSH_FP_SHA1, SSH_FP_BUBBLEBABBLE);
 	ASSERT_PTR_NE(cp, NULL);
-	ASSERT_STRING_EQ(cp, sshbuf_ptr(buf));
+	ASSERT_STRING_EQ(cp, (const char *)sshbuf_ptr(buf));
 	sshbuf_free(buf);
 	free(cp);
 	TEST_DONE();
@@ -173,8 +173,8 @@ sshkey_file_tests(void)
 
 	TEST_START("parse DSA from private w/ passphrase");
 	buf = load_file("dsa_1_pw");
-	ASSERT_INT_EQ(sshkey_parse_private(buf, sshbuf_ptr(pw), "dsa_1_pw",
-	    &k2, NULL), 0);
+	ASSERT_INT_EQ(sshkey_parse_private(buf,
+	    (const char *)sshbuf_ptr(pw), "dsa_1_pw", &k2, NULL), 0);
 	sshbuf_free(buf);
 	ASSERT_PTR_NE(k2, NULL);
 	ASSERT_INT_EQ(sshkey_equal(k1, k2), 1);
@@ -202,7 +202,7 @@ sshkey_file_tests(void)
 	buf = load_text_file("dsa_1.fp");
 	cp = sshkey_fingerprint(k1, SSH_FP_MD5, SSH_FP_HEX);
 	ASSERT_PTR_NE(cp, NULL);
-	ASSERT_STRING_EQ(cp, sshbuf_ptr(buf));
+	ASSERT_STRING_EQ(cp, (const char *)sshbuf_ptr(buf));
 	sshbuf_free(buf);
 	free(cp);
 	TEST_DONE();
@@ -211,7 +211,7 @@ sshkey_file_tests(void)
 	buf = load_text_file("dsa_1.fp.bb");
 	cp = sshkey_fingerprint(k1, SSH_FP_SHA1, SSH_FP_BUBBLEBABBLE);
 	ASSERT_PTR_NE(cp, NULL);
-	ASSERT_STRING_EQ(cp, sshbuf_ptr(buf));
+	ASSERT_STRING_EQ(cp, (const char *)sshbuf_ptr(buf));
 	sshbuf_free(buf);
 	free(cp);
 	TEST_DONE();
@@ -224,7 +224,8 @@ sshkey_file_tests(void)
 	sshbuf_free(buf);
 	ASSERT_PTR_NE(k1, NULL);
 	buf = load_text_file("ecdsa_1.param.curve");
-	ASSERT_STRING_EQ(sshbuf_ptr(buf), OBJ_nid2sn(k1->ecdsa_nid));
+	ASSERT_STRING_EQ((const char *)sshbuf_ptr(buf),
+	    OBJ_nid2sn(k1->ecdsa_nid));
 	sshbuf_free(buf);
 	a = load_bignum("ecdsa_1.param.priv");
 	b = load_bignum("ecdsa_1.param.pub");
@@ -241,8 +242,8 @@ sshkey_file_tests(void)
 
 	TEST_START("parse ECDSA from private w/ passphrase");
 	buf = load_file("ecdsa_1_pw");
-	ASSERT_INT_EQ(sshkey_parse_private(buf, sshbuf_ptr(pw), "ecdsa_1_pw",
-	    &k2, NULL), 0);
+	ASSERT_INT_EQ(sshkey_parse_private(buf,
+	    (const char *)sshbuf_ptr(pw), "ecdsa_1_pw", &k2, NULL), 0);
 	sshbuf_free(buf);
 	ASSERT_PTR_NE(k2, NULL);
 	ASSERT_INT_EQ(sshkey_equal(k1, k2), 1);
@@ -270,7 +271,7 @@ sshkey_file_tests(void)
 	buf = load_text_file("ecdsa_1.fp");
 	cp = sshkey_fingerprint(k1, SSH_FP_MD5, SSH_FP_HEX);
 	ASSERT_PTR_NE(cp, NULL);
-	ASSERT_STRING_EQ(cp, sshbuf_ptr(buf));
+	ASSERT_STRING_EQ(cp, (const char *)sshbuf_ptr(buf));
 	sshbuf_free(buf);
 	free(cp);
 	TEST_DONE();
@@ -279,7 +280,7 @@ sshkey_file_tests(void)
 	buf = load_text_file("ecdsa_1.fp.bb");
 	cp = sshkey_fingerprint(k1, SSH_FP_SHA1, SSH_FP_BUBBLEBABBLE);
 	ASSERT_PTR_NE(cp, NULL);
-	ASSERT_STRING_EQ(cp, sshbuf_ptr(buf));
+	ASSERT_STRING_EQ(cp, (const char *)sshbuf_ptr(buf));
 	sshbuf_free(buf);
 	free(cp);
 	TEST_DONE();

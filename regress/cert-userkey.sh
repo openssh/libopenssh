@@ -1,4 +1,4 @@
-#	$OpenBSD: cert-userkey.sh,v 1.9 2012/10/19 05:10:42 djm Exp $
+#	$OpenBSD: cert-userkey.sh,v 1.11 2013/05/17 00:37:40 dtucker Exp $
 #	Placed in the Public Domain.
 
 tid="certified user keys"
@@ -120,7 +120,7 @@ for ktype in rsa dsa ecdsa rsa_v00 dsa_v00 ; do
 		# Wrong principals list
 		verbose "$tid: ${_prefix} wrong principals key option"
 		(
-			echo -n 'cert-authority,principals="gregorsamsa" '
+			printf 'cert-authority,principals="gregorsamsa" '
 			cat $OBJ/user_ca_key.pub
 		) > $OBJ/authorized_keys_$USER
 		${SSH} -2i $OBJ/cert_user_key_${ktype} \
@@ -132,7 +132,7 @@ for ktype in rsa dsa ecdsa rsa_v00 dsa_v00 ; do
 		# Correct principals list
 		verbose "$tid: ${_prefix} correct principals key option"
 		(
-			echo -n 'cert-authority,principals="mekmitasdigoat" '
+			printf 'cert-authority,principals="mekmitasdigoat" '
 			cat $OBJ/user_ca_key.pub
 		) > $OBJ/authorized_keys_$USER
 		${SSH} -2i $OBJ/cert_user_key_${ktype} \
@@ -148,7 +148,7 @@ basic_tests() {
 	if test "x$auth" = "xauthorized_keys" ; then
 		# Add CA to authorized_keys
 		(
-			echo -n 'cert-authority '
+			printf 'cert-authority '
 			cat $OBJ/user_ca_key.pub
 		) > $OBJ/authorized_keys_$USER
 	else
@@ -178,13 +178,31 @@ basic_tests() {
 			(
 				cat $OBJ/sshd_proxy_bak
 				echo "UsePrivilegeSeparation $privsep"
-				echo "RevokedKeys $OBJ/cert_user_key_${ktype}.pub"
+				echo "RevokedKeys $OBJ/cert_user_key_revoked"
 				echo "$extra_sshd"
 			) > $OBJ/sshd_proxy
+			cp $OBJ/cert_user_key_${ktype}.pub \
+			    $OBJ/cert_user_key_revoked
 			${SSH} -2i $OBJ/cert_user_key_${ktype} \
 			    -F $OBJ/ssh_proxy somehost true >/dev/null 2>&1
 			if [ $? -eq 0 ]; then
 				fail "ssh cert connect succeeded unexpecedly"
+			fi
+			verbose "$tid: ${_prefix} revoked via KRL"
+			rm $OBJ/cert_user_key_revoked
+			${SSHKEYGEN} -kqf $OBJ/cert_user_key_revoked \
+			    $OBJ/cert_user_key_${ktype}.pub
+			${SSH} -2i $OBJ/cert_user_key_${ktype} \
+			    -F $OBJ/ssh_proxy somehost true >/dev/null 2>&1
+			if [ $? -eq 0 ]; then
+				fail "ssh cert connect succeeded unexpecedly"
+			fi
+			verbose "$tid: ${_prefix} empty KRL"
+			${SSHKEYGEN} -kqf $OBJ/cert_user_key_revoked
+			${SSH} -2i $OBJ/cert_user_key_${ktype} \
+			    -F $OBJ/ssh_proxy somehost true >/dev/null 2>&1
+			if [ $? -ne 0 ]; then
+				fail "ssh cert connect failed"
 			fi
 		done
 	
@@ -240,7 +258,7 @@ test_one() {
 			if test "x$auth" = "xauthorized_keys" ; then
 				# Add CA to authorized_keys
 				(
-					echo -n "cert-authority${auth_opt} "
+					printf "cert-authority${auth_opt} "
 					cat $OBJ/user_ca_key.pub
 				) > $OBJ/authorized_keys_$USER
 			else

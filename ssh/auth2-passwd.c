@@ -1,4 +1,4 @@
-/* $OpenBSD: auth2-passwd.c,v 1.9 2006/08/03 03:34:41 deraadt Exp $ */
+/* $OpenBSD: auth2-passwd.c,v 1.10 2013/05/17 00:13:13 djm Exp $ */
 /*
  * Copyright (c) 2000 Markus Friedl.  All rights reserved.
  *
@@ -66,7 +66,7 @@ userauth_passwd(struct ssh *ssh)
 	return authenticated;
 }
 
-Authmethod method_passwd = {
+struct authmethod method_passwd = {
 	"password",
 	userauth_passwd,
 	&options.password_authentication

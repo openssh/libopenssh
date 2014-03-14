@@ -60,7 +60,7 @@ auth_rhosts_rsa_key_allowed(struct passwd *pw, char *cuser, char *chost,
  * its host key.  Returns true if authentication succeeds.
  */
 int
-auth_rhosts_rsa(Authctxt *authctxt, char *cuser,
+auth_rhosts_rsa(struct authctxt *authctxt, char *cuser,
     struct sshkey *client_host_key)
 {
 	struct ssh *ssh = active_state;		/* XXX */

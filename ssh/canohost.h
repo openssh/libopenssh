@@ -12,6 +12,7 @@
  * called by a name other than "ssh" or "Secure Shell".
  */
 
+struct ssh;
 const char	*get_canonical_hostname(int);
 const char	*get_remote_name_or_ip(u_int, int);
 
@@ -20,7 +21,6 @@ int		 get_peer_port(int);
 char		*get_local_ipaddr(int);
 char		*get_local_name(int);
 
-int		 get_remote_port(void);
-int		 get_local_port(void);
+int		 ssh_get_remote_port(struct ssh *);
+int		 ssh_get_local_port(struct ssh *);
 int		 get_sock_port(int, int);
-void		 clear_cached_addr(void);

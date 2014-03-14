@@ -1,4 +1,4 @@
-#	$OpenBSD: cipher-speed.sh,v 1.6 2012/10/05 02:20:48 dtucker Exp $
+#	$OpenBSD: cipher-speed.sh,v 1.9 2013/05/17 04:29:14 dtucker Exp $
 #	Placed in the Public Domain.
 
 tid="cipher speed"
@@ -9,20 +9,19 @@ getbytes ()
 }
 
 tries="1 2"
-DATA=/bin/ls
-DATA=/bsd
 
 ciphers="aes128-cbc 3des-cbc blowfish-cbc cast128-cbc 
 	arcfour128 arcfour256 arcfour 
 	aes192-cbc aes256-cbc rijndael-cbc@lysator.liu.se
-	aes128-ctr aes192-ctr aes256-ctr"
+	aes128-ctr aes192-ctr aes256-ctr
+	aes128-gcm@openssh.com aes256-gcm@openssh.com"
 macs="hmac-sha1 hmac-md5 umac-64@openssh.com umac-128@openssh.com
 	hmac-sha1-96 hmac-md5-96 hmac-sha2-256 hmac-sha2-512"
 
-for c in $ciphers; do for m in $macs; do
+for c in $ciphers; do n=0; for m in $macs; do
 	trace "proto 2 cipher $c mac $m"
 	for x in $tries; do
-		echo -n "$c/$m:\t"
+		printf "$c/$m:\t"
 		( ${SSH} -o 'compression no' \
 			-F $OBJ/ssh_proxy -2 -m $m -c $c somehost \
 			exec sh -c \'"dd of=/dev/null obs=32k"\' \
@@ -32,13 +31,18 @@ for c in $ciphers; do for m in $macs; do
 			fail "ssh -2 failed with mac $m cipher $c"
 		fi
 	done
+	# No point trying all MACs for GCM since they are ignored.
+	case $c in
+	aes*-gcm@openssh.com)	test $n -gt 0 && break;;
+	esac
+	n=$(($n + 1))
 done; done
 
 ciphers="3des blowfish"
 for c in $ciphers; do
 	trace "proto 1 cipher $c"
 	for x in $tries; do
-		echo -n "$c:\t"
+		printf "$c:\t"
 		( ${SSH} -o 'compression no' \
 			-F $OBJ/ssh_proxy -1 -c $c somehost \
 			exec sh -c \'"dd of=/dev/null obs=32k"\' \

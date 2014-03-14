@@ -1,4 +1,4 @@
-/* $OpenBSD: clientloop.h,v 1.30 2012/08/17 00:45:45 dtucker Exp $ */
+/* $OpenBSD: clientloop.h,v 1.31 2013/06/02 23:36:29 dtucker Exp $ */
 
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
@@ -41,7 +41,7 @@ struct ssh;
 
 /* Client side main loop for the interactive session. */
 struct sshbuf;
-int	 client_loop(struct ssh *, int, int, int);
+int	 client_loop(struct ssh *, int, int, u_int);
 void	 client_x11_get_proto(const char *, const char *, u_int, u_int,
 	    char **, char **);
 void	 client_global_request_reply_fwd(int, u_int32_t, void *);
@@ -52,7 +52,7 @@ void	 client_stop_mux(void);
 
 /* Escape filter for protocol 2 sessions */
 void	*client_new_escape_filter_ctx(int);
-void	 client_filter_cleanup(int, void *);
+void	 client_filter_cleanup(u_int, void *);
 int	 client_simple_escape_filter(Channel *, char *, int);
 
 /* Global request confirmation callbacks */
@@ -75,9 +75,8 @@ void client_expect_confirm(int, const char *, enum confirm_action);
 #define SSHMUX_COMMAND_STOP		6	/* Disable mux but not conn */
 #define SSHMUX_COMMAND_CANCEL_FWD	7	/* Cancel forwarding(s) */
 
-void	muxserver_listen(void);
+void	muxserver_listen(struct ssh *);
 void	muxclient(const char *);
 void	mux_exit_message(Channel *, int);
 void	mux_tty_alloc_failed(Channel *);
-void	mux_master_session_cleanup_cb(int, void *);
 

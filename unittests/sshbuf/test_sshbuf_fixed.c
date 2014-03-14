@@ -59,6 +59,7 @@ sshbuf_fixed(void)
 	ASSERT_STRING_EQ(s, "hello");
 	ASSERT_SIZE_T_EQ(l, 5);
 	sshbuf_free(p1);
+	free(s);
 	TEST_DONE();
 
 	TEST_START("sshbuf_fromb ");
@@ -91,6 +92,7 @@ sshbuf_fixed(void)
 	sshbuf_free(p1);
 	ASSERT_U_INT_EQ(sshbuf_refcount(p1), 1);
 	sshbuf_free(p2);
+	free(s);
 	TEST_DONE();
 
 	TEST_START("sshbuf_froms");

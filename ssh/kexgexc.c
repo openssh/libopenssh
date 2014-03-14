@@ -1,4 +1,4 @@
-/* $OpenBSD: kexgexc.c,v 1.12 2010/11/10 01:33:07 djm Exp $ */
+/* $OpenBSD: kexgexc.c,v 1.13 2013/05/17 00:13:13 djm Exp $ */
 /*
  * Copyright (c) 2000 Niels Provos.  All rights reserved.
  * Copyright (c) 2001 Markus Friedl.  All rights reserved.
@@ -51,7 +51,8 @@ int
 kexgex_client(struct ssh *ssh)
 {
 	struct kex *kex = ssh->kex;
-	int r, nbits;
+	int r;
+	u_int nbits;
 
 	nbits = dh_estimate(kex->we_need * 8);
 
@@ -93,7 +94,7 @@ input_kex_dh_gex_group(int type, u_int32_t seq, struct ssh *ssh)
 {
 	struct kex *kex = ssh->kex;
 	BIGNUM *p = NULL, *g = NULL;
-	int r;
+	int r, bits;
 
 	debug("got SSH2_MSG_KEX_DH_GEX_GROUP");
 
@@ -106,7 +107,8 @@ input_kex_dh_gex_group(int type, u_int32_t seq, struct ssh *ssh)
 	    (r = sshpkt_get_bignum2(ssh, g)) != 0 ||
 	    (r = sshpkt_get_end(ssh)) != 0)
 		goto out;
-	if (BN_num_bits(p) < kex->min || BN_num_bits(p) > kex->max) {
+	if ((bits = BN_num_bits(p)) < 0 ||
+	    (u_int)bits < kex->min || (u_int)bits > kex->max) {
 		r = SSH_ERR_DH_GEX_OUT_OF_RANGE;
 		goto out;
 	}
@@ -145,7 +147,7 @@ input_kex_dh_gex_reply(int type, u_int32_t seq, struct ssh *ssh)
 {
 	struct kex *kex = ssh->kex;
 	BIGNUM *dh_server_pub = NULL, *shared_secret = NULL;
-	struct sshkey *server_host_key;
+	struct sshkey *server_host_key = NULL;
 	u_char *kbuf = NULL, *hash, *signature = NULL, *server_host_key_blob = NULL;
 	size_t klen = 0, slen, sbloblen, hashlen;
 	int kout, r;

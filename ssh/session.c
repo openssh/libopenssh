@@ -1,4 +1,4 @@
-/* $OpenBSD: session.c,v 1.261 2012/12/02 20:46:11 djm Exp $ */
+/* $OpenBSD: session.c,v 1.265 2013/05/17 00:13:14 djm Exp $ */
 /*
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
  *                    All rights reserved
@@ -183,7 +183,7 @@ auth_input_request_forwarding(Session *s)
 		ssh_packet_send_debug(s->ssh, "Agent forwarding disabled: "
 		    "mkdtemp() failed: %.100s", strerror(errno));
 		restore_uid();
-		xfree(auth_sock_dir);
+		free(auth_sock_dir);
 		auth_sock_dir = NULL;
 		goto authsock_err;
 	}
@@ -220,7 +220,7 @@ auth_input_request_forwarding(Session *s)
 	}
 
 	/* Allocate a channel for the authentication agent socket. */
-	nc = channel_new("auth socket",
+	nc = channel_new(s->ssh, "auth socket",
 	    SSH_CHANNEL_AUTH_SOCKET, sock, sock, -1,
 	    CHAN_X11_WINDOW_DEFAULT, CHAN_X11_PACKET_DEFAULT,
 	    0, "auth socket", 1);
@@ -228,11 +228,10 @@ auth_input_request_forwarding(Session *s)
 	return 1;
 
  authsock_err:
-	if (auth_sock_name != NULL)
-		xfree(auth_sock_name);
+	free(auth_sock_name);
 	if (auth_sock_dir != NULL) {
 		rmdir(auth_sock_dir);
-		xfree(auth_sock_dir);
+		free(auth_sock_dir);
 	}
 	if (sock != -1)
 		close(sock);
@@ -250,14 +249,14 @@ display_loginmsg(void)
 		return;
 	if ((r = sshbuf_put_u8(loginmsg, 0)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
-	printf("%s", (char *)sshbuf_ptr(loginmsg));
+	printf("%s", (const char *)sshbuf_ptr(loginmsg));
 	sshbuf_reset(loginmsg);
 }
 
 void
 do_authenticated(struct ssh *ssh)
 {
-	Authctxt *authctxt = ssh->authctxt;
+	struct authctxt *authctxt = ssh->authctxt;
 
 	setproctitle("%s", authctxt->pw->pw_name);
 
@@ -358,8 +357,8 @@ do_authenticated1(struct ssh *ssh)
 				fatal("%s: %s", __func__, ssh_err(r));
 			success = session_setup_x11fwd(s);
 			if (!success) {
-				xfree(s->auth_proto);
-				xfree(s->auth_data);
+				free(s->auth_proto);
+				free(s->auth_data);
 				s->auth_proto = NULL;
 				s->auth_data = NULL;
 			}
@@ -385,7 +384,7 @@ do_authenticated1(struct ssh *ssh)
 				break;
 			}
 			debug("Received TCP/IP port forwarding request.");
-			if (channel_input_port_forward_request(s->pw->pw_uid == 0,
+			if (channel_input_port_forward_request(ssh, s->pw->pw_uid == 0,
 			    options.gateway_ports) < 0) {
 				debug("Port forwarding failed.");
 				break;
@@ -882,7 +881,7 @@ child_set_env(char ***envp, u_int *envsizep, const char *name,
 			break;
 	if (env[i]) {
 		/* Reuse the slot. */
-		xfree(env[i]);
+		free(env[i]);
 	} else {
 		/* New variable.  Expand if necessary. */
 		envsize = *envsizep;
@@ -1006,20 +1005,22 @@ do_setup_env(Session *s, const char *shell)
 				child_set_env(&env, &envsize, str, str + i + 1);
 			}
 			custom_environment = ce->next;
-			xfree(ce->s);
-			xfree(ce);
+			free(ce->s);
+			free(ce);
 		}
 	}
 
 	/* SSH_CLIENT deprecated */
 	snprintf(buf, sizeof buf, "%.50s %d %d",
-	    ssh_remote_ipaddr(ssh), get_remote_port(), get_local_port());
+	    ssh_remote_ipaddr(ssh), ssh_get_remote_port(ssh),
+	    ssh_get_local_port(ssh));
 	child_set_env(&env, &envsize, "SSH_CLIENT", buf);
 
 	laddr = get_local_ipaddr(ssh_packet_get_connection_in(ssh));
 	snprintf(buf, sizeof buf, "%.50s %d %.50s %d",
-	    ssh_remote_ipaddr(ssh), get_remote_port(), laddr, get_local_port());
-	xfree(laddr);
+	    ssh_remote_ipaddr(ssh), ssh_get_remote_port(ssh), laddr,
+	    ssh_get_local_port(ssh));
+	free(laddr);
 	child_set_env(&env, &envsize, "SSH_CONNECTION", buf);
 
 	if (s->ttyfd != -1)
@@ -1140,7 +1141,7 @@ do_nologin(struct passwd *pw)
 
 	if (stat(nl, &sb) == -1) {
 		if (nl != def_nl)
-			xfree(nl);
+			free(nl);
 		return;
 	}
 
@@ -1232,6 +1233,9 @@ do_setusercontext(struct passwd *pw)
 			safely_chroot(chroot_path, pw->pw_uid);
 			free(tmp);
 			free(chroot_path);
+			/* Make sure we don't attempt to chroot again */
+			free(options.chroot_directory);
+			options.chroot_directory = NULL;
 		}
 
 		/* Set UID */
@@ -1239,7 +1243,11 @@ do_setusercontext(struct passwd *pw)
 			perror("unable to set user context (setuser)");
 			exit(1);
 		}
+	} else if (options.chroot_directory != NULL &&
+	    strcasecmp(options.chroot_directory, "none") != 0) {
+		fatal("server lacks privileges to chroot to ChrootDirectory");
 	}
+
 	if (getuid() != pw->pw_uid || geteuid() != pw->pw_uid)
 		fatal("Failed to set uids to %u.", (u_int) pw->pw_uid);
 }
@@ -1512,7 +1520,7 @@ session_unused(int id)
 	bzero(&sessions[id], sizeof(*sessions));
 	sessions[id].self = id;
 	sessions[id].used = 0;
-	sessions[id].chanid = -1;
+	sessions[id].chanid = CHANNEL_ID_NONE;
 	sessions[id].ptyfd = -1;
 	sessions[id].ttyfd = -1;
 	sessions[id].ptymaster = -1;
@@ -1581,7 +1589,7 @@ session_dump(void)
 }
 
 int
-session_open(struct ssh *ssh, int chanid)
+session_open(struct ssh *ssh, u_int chanid)
 {
 	Session *s = session_new();
 	debug("session_open: channel %d", chanid);
@@ -1616,24 +1624,23 @@ session_by_tty(char *tty)
 }
 
 static Session *
-session_by_channel(int id)
+session_by_channel(u_int id)
 {
 	int i;
 	for (i = 0; i < sessions_nalloc; i++) {
 		Session *s = &sessions[i];
 		if (s->used && s->chanid == id) {
-			debug("session_by_channel: session %d channel %d",
-			    i, id);
+			debug("%s: session %d channel %u", __func__, i, id);
 			return s;
 		}
 	}
-	debug("session_by_channel: unknown channel %d", id);
+	debug("%s: unknown channel %u", __func__, id);
 	session_dump();
 	return NULL;
 }
 
 static Session *
-session_by_x11_channel(int id)
+session_by_x11_channel(u_int id)
 {
 	int i, j;
 
@@ -1642,10 +1649,10 @@ session_by_x11_channel(int id)
 
 		if (s->x11_chanids == NULL || !s->used)
 			continue;
-		for (j = 0; s->x11_chanids[j] != -1; j++) {
+		for (j = 0; s->x11_chanids[j] != CHANNEL_ID_NONE; j++) {
 			if (s->x11_chanids[j] == id) {
-				debug("session_by_x11_channel: session %d "
-				    "channel %d", s->self, id);
+				debug("%s: session %d channel %u",
+				    __func__, s->self, id);
 				return s;
 			}
 		}
@@ -1723,8 +1730,7 @@ session_pty_req(Session *s)
 	debug("Allocating pty.");
 	if (!PRIVSEP(pty_allocate(&s->ptyfd, &s->ttyfd, s->tty,
 	    sizeof(s->tty)))) {
-		if (s->term)
-			xfree(s->term);
+		free(s->term);
 		s->term = NULL;
 		s->ptyfd = -1;
 		s->ttyfd = -1;
@@ -1840,7 +1846,7 @@ session_exec_req(Session *s)
 	    (r = sshpkt_get_end(s->ssh)) != 0)
 		fatal("%s: %s", __func__, ssh_err(r));
 	success = do_exec(s, command) == 0;
-	xfree(command);
+	free(command);
 	return success;
 }
 
@@ -1890,8 +1896,8 @@ session_env_req(Session *s)
 	debug2("Ignoring env request %s: disallowed name", name);
 
  fail:
-	xfree(name);
-	xfree(val);
+	free(name);
+	free(val);
 	return (0);
 }
 
@@ -1968,7 +1974,7 @@ session_set_fds(Session *s, int fdin, int fdout, int fderr, int ignore_fderr,
 	 * now that have a child and a pipe to the child,
 	 * we can activate our channel and register the fd's
 	 */
-	if (s->chanid == -1)
+	if (s->chanid == CHANNEL_ID_NONE)
 		fatal("no channel for session %d", s->self);
 	channel_set_fds(s->chanid,
 	    fdout, fdin, fderr,
@@ -2041,15 +2047,15 @@ sig2name(int sig)
 }
 
 static void
-session_close_x11(int id)
+session_close_x11(u_int id)
 {
 	Channel *c;
 
 	if ((c = channel_by_id(id)) == NULL) {
-		debug("session_close_x11: x11 channel %d missing", id);
+		debug("%s: x11 channel %u missing", __func__, id);
 	} else {
 		/* Detach X11 listener */
-		debug("session_close_x11: detach x11 channel %d", id);
+		debug("%s: detach x11 channel %u", __func__, id);
 		channel_cancel_cleanup(id);
 		if (c->ostate != CHAN_OUTPUT_CLOSED)
 			chan_mark_dead(c);
@@ -2057,18 +2063,18 @@ session_close_x11(int id)
 }
 
 static void
-session_close_single_x11(int id, void *arg)
+session_close_single_x11(u_int id, void *arg)
 {
 	Session *s;
 	u_int i;
 
-	debug3("session_close_single_x11: channel %d", id);
+	debug3("%s: channel %u", __func__, id);
 	channel_cancel_cleanup(id);
 	if ((s = session_by_x11_channel(id)) == NULL)
-		fatal("session_close_single_x11: no x11 channel %d", id);
-	for (i = 0; s->x11_chanids[i] != -1; i++) {
-		debug("session_close_single_x11: session %d: "
-		    "closing channel %d", s->self, s->x11_chanids[i]);
+		fatal("%s: no x11 channel %u", __func__, id);
+	for (i = 0; s->x11_chanids[i] != CHANNEL_ID_NONE; i++) {
+		debug("%s: session %u: closing channel %d", __func__,
+		    s->self, s->x11_chanids[i]);
 		/*
 		 * The channel "id" is already closing, but make sure we
 		 * close all of its siblings.
@@ -2076,24 +2082,16 @@ session_close_single_x11(int id, void *arg)
 		if (s->x11_chanids[i] != id)
 			session_close_x11(s->x11_chanids[i]);
 	}
-	xfree(s->x11_chanids);
+	free(s->x11_chanids);
 	s->x11_chanids = NULL;
-	if (s->display) {
-		xfree(s->display);
-		s->display = NULL;
-	}
-	if (s->auth_proto) {
-		xfree(s->auth_proto);
-		s->auth_proto = NULL;
-	}
-	if (s->auth_data) {
-		xfree(s->auth_data);
-		s->auth_data = NULL;
-	}
-	if (s->auth_display) {
-		xfree(s->auth_display);
-		s->auth_display = NULL;
-	}
+	free(s->display);
+	s->display = NULL;
+	free(s->auth_proto);
+	s->auth_proto = NULL;
+	free(s->auth_data);
+	s->auth_data = NULL;
+	free(s->auth_display);
+	s->auth_display = NULL;
 }
 
 static void
@@ -2157,24 +2155,18 @@ session_close(Session *s)
 	debug("session_close: session %d pid %ld", s->self, (long)s->pid);
 	if (s->ttyfd != -1)
 		session_pty_cleanup(s);
-	if (s->term)
-		xfree(s->term);
-	if (s->display)
-		xfree(s->display);
-	if (s->x11_chanids)
-		xfree(s->x11_chanids);
-	if (s->auth_display)
-		xfree(s->auth_display);
-	if (s->auth_data)
-		xfree(s->auth_data);
-	if (s->auth_proto)
-		xfree(s->auth_proto);
+	free(s->term);
+	free(s->display);
+	free(s->x11_chanids);
+	free(s->auth_display);
+	free(s->auth_data);
+	free(s->auth_proto);
 	if (s->env != NULL) {
 		for (i = 0; i < s->num_env; i++) {
-			xfree(s->env[i].name);
-			xfree(s->env[i].val);
+			free(s->env[i].name);
+			free(s->env[i].val);
 		}
-		xfree(s->env);
+		free(s->env);
 	}
 	session_proctitle(s);
 	session_unused(s->self);
@@ -2189,7 +2181,7 @@ session_close_by_pid(pid_t pid, int status)
 		    (long)pid);
 		return;
 	}
-	if (s->chanid != -1)
+	if (s->chanid != CHANNEL_ID_NONE)
 		session_exit_message(s, status);
 	if (s->ttyfd != -1)
 		session_pty_cleanup(s);
@@ -2201,7 +2193,7 @@ session_close_by_pid(pid_t pid, int status)
  * the session 'child' itself dies
  */
 void
-session_close_by_channel(int id, void *arg)
+session_close_by_channel(u_int id, void *arg)
 {
 	Session *s = session_by_channel(id);
 	u_int i;
@@ -2227,13 +2219,13 @@ session_close_by_channel(int id, void *arg)
 
 	/* Close any X11 listeners associated with this session */
 	if (s->x11_chanids != NULL) {
-		for (i = 0; s->x11_chanids[i] != -1; i++) {
+		for (i = 0; s->x11_chanids[i] != CHANNEL_ID_NONE; i++) {
 			session_close_x11(s->x11_chanids[i]);
-			s->x11_chanids[i] = -1;
+			s->x11_chanids[i] = CHANNEL_ID_NONE;
 		}
 	}
 
-	s->chanid = -1;
+	s->chanid = CHANNEL_ID_NONE;
 	session_close(s);
 }
 
@@ -2313,13 +2305,13 @@ session_setup_x11fwd(Session *s)
 		debug("X11 display already set.");
 		return 0;
 	}
-	if (x11_create_display_inet(options.x11_display_offset,
+	if (x11_create_display_inet(ssh, options.x11_display_offset,
 	    options.x11_use_localhost, s->single_connection,
 	    &s->display_number, &s->x11_chanids) == -1) {
 		debug("x11_create_display_inet failed.");
 		return 0;
 	}
-	for (i = 0; s->x11_chanids[i] != -1; i++) {
+	for (i = 0; s->x11_chanids[i] != CHANNEL_ID_NONE; i++) {
 		channel_register_cleanup(s->x11_chanids[i],
 		    session_close_single_x11, 0);
 	}
@@ -2356,7 +2348,7 @@ do_authenticated2(struct ssh *ssh)
 }
 
 void
-do_cleanup(Authctxt *authctxt)
+do_cleanup(struct authctxt *authctxt)
 {
 	static int called = 0;
 

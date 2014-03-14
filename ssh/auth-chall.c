@@ -1,4 +1,4 @@
-/* $OpenBSD: auth-chall.c,v 1.12 2006/08/03 03:34:41 deraadt Exp $ */
+/* $OpenBSD: auth-chall.c,v 1.13 2013/05/17 00:13:13 djm Exp $ */
 /*
  * Copyright (c) 2001 Markus Friedl.  All rights reserved.
  *
@@ -33,11 +33,11 @@
 
 /* limited protocol v1 interface to kbd-interactive authentication */
 
-extern KbdintDevice *devices[];
-static KbdintDevice *device;
+extern struct kbdintdevice *devices[];
+static struct kbdintdevice *device;
 
 char *
-get_challenge(Authctxt *authctxt)
+get_challenge(struct authctxt *authctxt)
 {
 	char *challenge, *name, *info, **prompts;
 	u_int i, numprompts;
@@ -58,16 +58,16 @@ get_challenge(Authctxt *authctxt)
 		fatal("get_challenge: numprompts < 1");
 	challenge = xstrdup(prompts[0]);
 	for (i = 0; i < numprompts; i++)
-		xfree(prompts[i]);
-	xfree(prompts);
-	xfree(name);
-	xfree(echo_on);
-	xfree(info);
+		free(prompts[i]);
+	free(prompts);
+	free(name);
+	free(echo_on);
+	free(info);
 
 	return (challenge);
 }
 int
-verify_response(Authctxt *authctxt, const char *response)
+verify_response(struct authctxt *authctxt, const char *response)
 {
 	char *resp[1];
 	int authenticated = 0;

@@ -372,7 +372,8 @@ output_cb(int fd, short type, void *arg)
 {
 	struct session *s = arg;
 	struct side *r, *w;
-	ssize_t len, olen;
+	ssize_t len;
+	size_t olen;
 	int pending;
 	const char *tag;
 	const u_char *obuf;
@@ -396,7 +397,7 @@ output_cb(int fd, short type, void *arg)
 			debug("write %s failed fd %d len %zd", tag, fd, len);
 			session_close(s);
 			return;
-		} else if (len < olen) {
+		} else if ((size_t)len < olen) {
 			debug("write %s partial fd %d len %zd olen %zd",
 			    tag, fd, len, olen);
 			ssh_output_consume(w->ssh, len);

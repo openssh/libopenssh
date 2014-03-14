@@ -1,4 +1,4 @@
-/* $OpenBSD: ssh-agent.c,v 1.172 2011/06/03 01:37:40 dtucker Exp $ */
+/* $OpenBSD: ssh-agent.c,v 1.176 2013/06/02 13:35:58 dtucker Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -94,7 +94,7 @@ typedef struct identity {
 	struct sshkey *key;
 	char *comment;
 	char *provider;
-	u_int death;
+	time_t death;
 	u_int confirm;
 } Identity;
 
@@ -110,7 +110,7 @@ int max_fd = 0;
 
 /* pid of shell == parent of agent */
 pid_t parent_pid = -1;
-u_int parent_alive_interval = 0;
+time_t parent_alive_interval = 0;
 
 /* pathname and directory for AUTH_SOCKET */
 char socket_name[MAXPATHLEN];
@@ -122,8 +122,8 @@ char *lock_passwd = NULL;
 
 extern char *__progname;
 
-/* Default lifetime (0 == forever) */
-static int lifetime = 0;
+/* Default lifetime in seconds (0 == forever) */
+static long lifetime = 0;
 
 static void
 close_socket(SocketEntry *e)
@@ -160,10 +160,9 @@ static void
 free_identity(Identity *id)
 {
 	sshkey_free(id->key);
-	if (id->provider != NULL)
-		xfree(id->provider);
-	xfree(id->comment);
-	xfree(id);
+	free(id->provider);
+	free(id->comment);
+	free(id);
 }
 
 /* return matching private key for given public key */
@@ -191,7 +190,7 @@ confirm_key(Identity *id)
 	if (ask_permission("Allow use of key %s?\nKey fingerprint %s.",
 	    id->comment, p))
 		ret = 0;
-	xfree(p);
+	free(p);
 
 	return (ret);
 }
@@ -245,7 +244,7 @@ process_request_identities(SocketEntry *e, int version)
 			if ((r = sshbuf_put_string(msg, blob, blen)) != 0)
 				fatal("%s: buffer error: %s",
 				    __func__, ssh_err(r));
-			xfree(blob);
+			free(blob);
 		}
 		if ((r = sshbuf_put_cstring(msg, id->comment)) != 0)
 			fatal("%s: buffer error: %s", __func__, ssh_err(r));
@@ -339,8 +338,8 @@ process_sign_request2(SocketEntry *e)
 {
 	u_char *blob, *data, *signature = NULL;
 	size_t blen, dlen, slen = 0;
-	u_int compat = 0;
-	int r, ok = -1, flags;
+	u_int compat = 0, flags;
+	int r, ok = -1;
 	struct sshbuf *msg;
 	struct sshkey *key;
 
@@ -376,10 +375,9 @@ process_sign_request2(SocketEntry *e)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
 
 	sshbuf_free(msg);
-	xfree(data);
-	xfree(blob);
-	if (signature != NULL)
-		xfree(signature);
+	free(data);
+	free(blob);
+	free(signature);
 }
 
 /* shared */
@@ -414,7 +412,7 @@ process_remove_identity(SocketEntry *e, int version)
 		if ((r = sshkey_from_blob(blob, blen, &key)) != 0)
 			error("%s: sshkey_from_blob failed: %s",
 			    __func__, ssh_err(r));
-		xfree(blob);
+		free(blob);
 		break;
 	}
 	if (key != NULL) {
@@ -463,10 +461,10 @@ process_remove_all_identities(SocketEntry *e, int version)
 }
 
 /* removes expired keys and returns number of seconds until the next expiry */
-static u_int
+static time_t
 reaper(void)
 {
-	u_int deadline = 0, now = time(NULL);
+	time_t deadline = 0, now = monotime();
 	Identity *id, *nxt;
 	int version;
 	Idtab *tab;
@@ -768,8 +766,10 @@ process_add_identity(SocketEntry *e, int version)
 {
 	Idtab *tab = idtab_lookup(version);
 	Identity *id;
-	int type, success = 0, death = 0, confirm = 0;
+	int type, success = 0, confirm = 0;
+	u_int seconds;
 	char *type_name = NULL, *comment = NULL;
+	time_t death = 0;
 	struct sshkey *k = NULL;
 	u_char ctype;
 	int r = SSH_ERR_INTERNAL_ERROR;
@@ -826,12 +826,12 @@ process_add_identity(SocketEntry *e, int version)
 		}
 		switch (ctype) {
 		case SSH_AGENT_CONSTRAIN_LIFETIME:
-			if ((r = sshbuf_get_u32(e->request, &death)) != 0) {
+			if ((r = sshbuf_get_u32(e->request, &seconds)) != 0) {
 				error("%s: bad lifetime constraint: %s",
 				    __func__, ssh_err(r));
 				goto err;
 			}
-			death += time(NULL);
+			death = monotime() + seconds;
 			break;
 		case SSH_AGENT_CONSTRAIN_CONFIRM:
 			confirm = 1;
@@ -848,7 +848,7 @@ process_add_identity(SocketEntry *e, int version)
 
 	success = 1;
 	if (lifetime && !death)
-		death = time(NULL) + lifetime;
+		death = monotime() + lifetime;
 	if ((id = lookup_identity(k, version)) == NULL) {
 		id = xcalloc(1, sizeof(Identity));
 		id->key = k;
@@ -857,7 +857,7 @@ process_add_identity(SocketEntry *e, int version)
 		tab->nentries++;
 	} else {
 		sshkey_free(k);
-		xfree(id->comment);
+		free(id->comment);
 	}
 	id->comment = comment;
 	id->death = death;
@@ -878,7 +878,7 @@ process_lock_agent(SocketEntry *e, int lock)
 	if (locked && !lock && strcmp(passwd, lock_passwd) == 0) {
 		locked = 0;
 		memset(lock_passwd, 0, strlen(lock_passwd));
-		xfree(lock_passwd);
+		free(lock_passwd);
 		lock_passwd = NULL;
 		success = 1;
 	} else if (!locked && lock) {
@@ -887,7 +887,7 @@ process_lock_agent(SocketEntry *e, int lock)
 		success = 1;
 	}
 	memset(passwd, 0, strlen(passwd));
-	xfree(passwd);
+	free(passwd);
 	send_status(e, success);
 }
 
@@ -914,7 +914,9 @@ static void
 process_add_smartcard_key(SocketEntry *e)
 {
 	char *provider = NULL, *pin;
-	int r, i, version, count = 0, success = 0, death = 0, confirm = 0;
+	int r, i, version, count = 0, success = 0, confirm = 0;
+	u_int seconds;
+	time_t death = 0;
 	u_char type;
 	struct sshkey **keys = NULL, *k;
 	Identity *id;
@@ -929,10 +931,10 @@ process_add_smartcard_key(SocketEntry *e)
 			fatal("%s: buffer error: %s", __func__, ssh_err(r));
 		switch (type) {
 		case SSH_AGENT_CONSTRAIN_LIFETIME:
-			if ((r = sshbuf_get_u32(e->request, &death)) != 0)
+			if ((r = sshbuf_get_u32(e->request, &seconds)) != 0)
 				fatal("%s: buffer error: %s",
 				    __func__, ssh_err(r));
-			death += time(NULL);
+			death = monotime() + seconds;
 			break;
 		case SSH_AGENT_CONSTRAIN_CONFIRM:
 			confirm = 1;
@@ -944,7 +946,7 @@ process_add_smartcard_key(SocketEntry *e)
 		}
 	}
 	if (lifetime && !death)
-		death = time(NULL) + lifetime;
+		death = monotime() + lifetime;
 
 	count = pkcs11_add_provider(provider, pin, &keys);
 	for (i = 0; i < count; i++) {
@@ -967,12 +969,9 @@ process_add_smartcard_key(SocketEntry *e)
 		keys[i] = NULL;
 	}
 send:
-	if (pin)
-		xfree(pin);
-	if (provider)
-		xfree(provider);
-	if (keys)
-		xfree(keys);
+	free(pin);
+	free(provider);
+	free(keys);
 	send_status(e, success);
 }
 
@@ -987,7 +986,7 @@ process_remove_smartcard_key(SocketEntry *e)
 	if ((r = sshbuf_get_cstring(e->request, &provider, NULL)) != 0 ||
 	    (r = sshbuf_get_cstring(e->request, &pin, NULL)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
-	xfree(pin);
+	free(pin);
 
 	for (version = 1; version < 3; version++) {
 		tab = idtab_lookup(version);
@@ -1005,7 +1004,7 @@ process_remove_smartcard_key(SocketEntry *e)
 	else
 		error("process_remove_smartcard_key:"
 		    " pkcs11_del_provider failed");
-	xfree(provider);
+	free(provider);
 	send_status(e, success);
 }
 #endif /* ENABLE_PKCS11 */
@@ -1017,7 +1016,7 @@ process_message(SocketEntry *e)
 {
 	u_int msg_len;
 	u_char type;
-	const char *cp;
+	const u_char *cp;
 	int r;
 
 	if (sshbuf_len(e->input) < 5)
@@ -1153,9 +1152,10 @@ static int
 prepare_select(fd_set **fdrp, fd_set **fdwp, int *fdl, u_int *nallocp,
     struct timeval **tvpp)
 {
-	u_int i, sz, deadline;
+	u_int i, sz;
 	int n = 0;
 	static struct timeval tv;
+	time_t deadline;
 
 	for (i = 0; i < sockets_alloc; i++) {
 		switch (sockets[i].type) {
@@ -1173,10 +1173,8 @@ prepare_select(fd_set **fdrp, fd_set **fdwp, int *fdl, u_int *nallocp,
 
 	sz = howmany(n+1, NFDBITS) * sizeof(fd_mask);
 	if (*fdrp == NULL || sz > *nallocp) {
-		if (*fdrp)
-			xfree(*fdrp);
-		if (*fdwp)
-			xfree(*fdwp);
+		free(*fdrp);
+		free(*fdwp);
 		*fdrp = xmalloc(sz);
 		*fdwp = xmalloc(sz);
 		*nallocp = sz;

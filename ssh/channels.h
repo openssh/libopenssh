@@ -1,4 +1,4 @@
-/* $OpenBSD: channels.h,v 1.111 2012/04/11 13:16:19 djm Exp $ */
+/* $OpenBSD: channels.h,v 1.113 2013/06/07 15:37:52 dtucker Exp $ */
 
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
@@ -55,19 +55,22 @@
 #define SSH_CHANNEL_ZOMBIE		14	/* Almost dead. */
 #define SSH_CHANNEL_MUX_LISTENER	15	/* Listener for mux conn. */
 #define SSH_CHANNEL_MUX_CLIENT		16	/* Conn. to mux slave */
-#define SSH_CHANNEL_MAX_TYPE		17
+#define SSH_CHANNEL_ABANDONED		17	/* Abandoned session, eg mux */
+#define SSH_CHANNEL_MAX_TYPE		18
 
 #define CHANNEL_CANCEL_PORT_STATIC	-1
+
+#define CHANNEL_ID_NONE			0xffffffff /* Never allocated */
 
 struct sshbuf;
 struct ssh;
 struct Channel;
 typedef struct Channel Channel;
 
-typedef void channel_open_fn(int, int, void *);
-typedef void channel_callback_fn(int, void *);
+typedef void channel_open_fn(u_int, int, void *);
+typedef void channel_callback_fn(u_int, void *);
 typedef int channel_infilter_fn(struct Channel *, char *, int);
-typedef void channel_filter_cleanup_fn(int, void *);
+typedef void channel_filter_cleanup_fn(u_int, void *);
 typedef u_char *channel_outfilter_fn(struct Channel *, u_char **, size_t *);
 
 /* Channel success/failure callbacks */
@@ -92,9 +95,10 @@ struct channel_connect {
 typedef int mux_callback_fn(struct Channel *);
 
 struct Channel {
+	struct ssh *ssh;	/* ssh connection */
 	int     type;		/* channel type/state */
-	int     self;		/* my own channel identifier */
-	int     remote_id;	/* channel identifier for remote peer */
+	u_int   self;		/* my own channel identifier */
+	u_int   remote_id;	/* channel identifier for remote peer */
 	u_int   istate;		/* input from channel (state of receive half) */
 	u_int   ostate;		/* output to channel  (state of transmit half) */
 	int     flags;		/* close sent/rcvd */
@@ -102,7 +106,7 @@ struct Channel {
 	int     wfd;		/* write fd */
 	int     efd;		/* extended fd */
 	int     sock;		/* sock fd */
-	int     ctl_chan;	/* control channel (multiplexed connections) */
+	u_int   ctl_chan;	/* control channel (multiplexed connections) */
 	int     isatty;		/* rfd is a tty */
 	int	client_tty;	/* (client) TTY has been requested */
 	int     force_drain;	/* force close on iEOF */
@@ -111,7 +115,7 @@ struct Channel {
 				 * channels are delayed until the first call
 				 * to a matching pre-select handler. 
 				 * this way post-select handlers are not
-				 * accidenly called if a FD gets reused */
+				 * accidentally called if a FD gets reused */
 	struct sshbuf *input;	/* data read from socket, to be sent over
 				 * encrypted connection */
 	struct sshbuf *output;	/* data received over encrypted connection for
@@ -207,24 +211,25 @@ struct Channel {
 
 /* channel management */
 
-Channel	*channel_by_id(int);
-Channel	*channel_lookup(int);
-Channel *channel_new(char *, int, int, int, int, u_int, u_int, int, char *, int);
-void	 channel_set_fds(int, int, int, int, int, int, int, u_int);
+Channel	*channel_by_id(u_int);
+Channel	*channel_lookup(u_int);
+Channel *channel_new(struct ssh *, char *, int, int, int, int, u_int, u_int, int,
+    char *, int);
+void	 channel_set_fds(u_int, int, int, int, int, int, int, u_int);
 void	 channel_free(Channel *);
 void	 channel_free_all(void);
 void	 channel_stop_listening(void);
 
-void	 channel_error(Channel *, char *, int, const char *);
-void	 channel_send_open(int);
-void	 channel_request_start(int, char *, int);
-void	 channel_register_cleanup(int, channel_callback_fn *, int);
-void	 channel_register_open_confirm(int, channel_open_fn *, void *);
-void	 channel_register_filter(int, channel_infilter_fn *,
+void	 channel_error(Channel *, char *, int, const char *) __attribute__((noreturn));
+void	 channel_send_open(u_int);
+void	 channel_request_start(u_int, char *, int);
+void	 channel_register_cleanup(u_int, channel_callback_fn *, int);
+void	 channel_register_open_confirm(u_int, channel_open_fn *, void *);
+void	 channel_register_filter(u_int, channel_infilter_fn *,
     channel_outfilter_fn *, channel_filter_cleanup_fn *, void *);
-void	 channel_register_status_confirm(int, channel_confirm_cb *,
+void	 channel_register_status_confirm(u_int, channel_confirm_cb *,
     channel_confirm_abandon_cb *, void *);
-void	 channel_cancel_cleanup(int);
+void	 channel_cancel_cleanup(u_int);
 int	 channel_close_fd(int *);
 void	 channel_send_window_changes(void);
 
@@ -253,7 +258,7 @@ int      channel_not_very_much_buffered_data(void);
 void     channel_close_all(void);
 int      channel_still_open(void);
 char	*channel_open_message(void);
-int	 channel_find_open(void);
+u_int	 channel_find_open(void);
 
 /* tcp forwarding */
 void	 channel_set_af(int af);
@@ -261,36 +266,42 @@ void     channel_permit_all_opens(void);
 void	 channel_add_permitted_opens(char *, int);
 int	 channel_add_adm_permitted_opens(char *, int);
 void	 channel_disable_adm_local_opens(void);
-void	 channel_update_permitted_opens(int, int);
+void	 channel_update_permitted_opens(struct ssh *, int, int);
 void	 channel_clear_permitted_opens(void);
 void	 channel_clear_adm_permitted_opens(void);
 void 	 channel_print_adm_permitted_opens(void);
-int      channel_input_port_forward_request(int, int);
-Channel	*channel_connect_to(const char *, u_short, char *, char *);
-Channel	*channel_connect_stdio_fwd(const char*, u_short, int, int);
-Channel	*channel_connect_by_listen_address(u_short, char *, char *);
-int	 channel_request_remote_forwarding(const char *, u_short,
+int      channel_input_port_forward_request(struct ssh *, int, int);
+Channel	*channel_connect_to(struct ssh *, const char *, u_short, char *, char *);
+Channel	*channel_connect_stdio_fwd(struct ssh *, const char*, u_short,
+    int, int);
+Channel	*channel_connect_by_listen_address(struct ssh *, u_short, char *,
+    char *);
+int	 channel_request_remote_forwarding(struct ssh *, const char *, u_short,
 	     const char *, u_short);
-int	 channel_setup_local_fwd_listener(const char *, u_short,
+int	 channel_setup_local_fwd_listener(struct ssh *, const char *, u_short,
 	     const char *, u_short, int);
-int	 channel_request_rforward_cancel(const char *host, u_short port);
-int	 channel_setup_remote_fwd_listener(const char *, u_short, int *, int);
+int	 channel_request_rforward_cancel(struct ssh *, const char *host,
+    u_short port);
+int	 channel_setup_remote_fwd_listener(struct ssh *, const char *, u_short,
+    int *, int);
 int	 channel_cancel_rport_listener(const char *, u_short);
-int	 channel_cancel_lport_listener(const char *, u_short, int, int);
+int	 channel_cancel_lport_listener(struct ssh *, const char *, u_short,
+    int, int);
 int	 permitopen_port(const char *);
 
 /* x11 forwarding */
 
 int	 x11_connect_display(void);
-int	 x11_create_display_inet(int, int, int, u_int *, int **);
+int	 x11_create_display_inet(struct ssh *, int, int, int,
+    u_int *, u_int **);
 int	 x11_input_open(int, u_int32_t, struct ssh *);
-void	 x11_request_forwarding_with_spoofing(int, const char *, const char *,
-	     const char *, int);
+void	 x11_request_forwarding_with_spoofing(struct ssh *, int, const char *,
+    const char *, const char *, int);
 int	 deny_input_open(int, u_int32_t, struct ssh *);
 
 /* agent forwarding */
 
-void	 auth_request_forwarding(void);
+void	 auth_request_forwarding(struct ssh *);
 
 /* channel close */
 

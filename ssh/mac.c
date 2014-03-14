@@ -1,4 +1,4 @@
-/* $OpenBSD: mac.c,v 1.21 2012/12/11 22:51:45 sthen Exp $ */
+/* $OpenBSD: mac.c,v 1.24 2013/06/03 00:03:18 dtucker Exp $ */
 /*
  * Copyright (c) 2001 Markus Friedl.  All rights reserved.
  *
@@ -43,7 +43,7 @@
 #define SSH_UMAC	2	/* UMAC (not integrated with OpenSSL) */
 #define SSH_UMAC128	3
 
-struct {
+struct macalg {
 	char		*name;
 	int		type;
 	const EVP_MD *	(*mdfunc)(void);
@@ -51,7 +51,9 @@ struct {
 	int		key_len;	/* just for UMAC */
 	int		len;		/* just for UMAC */
 	int		etm;		/* Encrypt-then-MAC */
-} macs[] = {
+};
+
+static const struct macalg macs[] = {
 	/* Encrypt-and-MAC (encrypt-and-authenticate) variants */
 	{ "hmac-sha1",				SSH_EVP, EVP_sha1, 0, 0, 0, 0 },
 	{ "hmac-sha1-96",			SSH_EVP, EVP_sha1, 96, 0, 0, 0 },
@@ -78,38 +80,59 @@ struct {
 	{ NULL,					0, NULL, 0, 0, 0, 0 }
 };
 
+/* Returns a comma-separated list of supported MACs. */
+char *
+mac_alg_list(void)
+{
+	char *ret = NULL;
+	size_t nlen, rlen = 0;
+	const struct macalg *m;
+
+	for (m = macs; m->name != NULL; m++) {
+		if (ret != NULL)
+			ret[rlen++] = '\n';
+		nlen = strlen(m->name);
+		if (reallocn((void **)&ret, 1, rlen + nlen + 2) == 0)
+			return NULL;
+		memcpy(ret + rlen, m->name, nlen + 1);
+		rlen += nlen;
+	}
+	return ret;
+}
+
 static int
-mac_setup_by_id(struct sshmac *mac, int which)
+mac_setup_by_alg(struct sshmac *mac, const struct macalg *macalg)
 {
 	int evp_len;
-	mac->type = macs[which].type;
+
+	mac->type = macalg->type;
 	if (mac->type == SSH_EVP) {
-		mac->evp_md = (*macs[which].mdfunc)();
+		mac->evp_md = macalg->mdfunc();
 		if ((evp_len = EVP_MD_size(mac->evp_md)) <= 0)
 			return SSH_ERR_LIBCRYPTO_ERROR;
 		mac->key_len = mac->mac_len = (u_int)evp_len;
 	} else {
-		mac->mac_len = macs[which].len / 8;
-		mac->key_len = macs[which].key_len / 8;
+		mac->mac_len = macalg->len / 8;
+		mac->key_len = macalg->key_len / 8;
 		mac->umac_ctx = NULL;
 	}
-	if (macs[which].truncatebits != 0)
-		mac->mac_len = macs[which].truncatebits / 8;
-	mac->etm = macs[which].etm;
+	if (macalg->truncatebits != 0)
+		mac->mac_len = macalg->truncatebits / 8;
+	mac->etm = macalg->etm;
 	return 0;
 }
 
 int
 mac_setup(struct sshmac *mac, char *name)
 {
-	int i;
+	const struct macalg *m;
 
-	for (i = 0; macs[i].name; i++) {
-		if (strcmp(name, macs[i].name) == 0) {
-			if (mac != NULL)
-				return mac_setup_by_id(mac, i);
-			return 0;
-		}
+	for (m = macs; m->name != NULL; m++) {
+		if (strcmp(name, m->name) != 0)
+			continue;
+		if (mac != NULL)
+			return mac_setup_by_alg(mac, m);
+		return 0;
 	}
 	return SSH_ERR_INVALID_ARGUMENT;
 }
@@ -146,10 +169,13 @@ int
 mac_compute(struct sshmac *mac, u_int32_t seqno, const u_char *data, int datalen,
     u_char *digest, size_t dlen)
 {
-	static u_char m[MAC_DIGEST_LEN_MAX];
+	static union {
+		u_char m[MAC_DIGEST_LEN_MAX];
+		u_int64_t for_align;
+	} u;
 	u_char b[4], nonce[8];
 
-	if (mac->mac_len > sizeof(m))
+	if (mac->mac_len > sizeof(u))
 		return SSH_ERR_INTERNAL_ERROR;
 
 	switch (mac->type) {
@@ -159,18 +185,18 @@ mac_compute(struct sshmac *mac, u_int32_t seqno, const u_char *data, int datalen
 		if (HMAC_Init(&mac->evp_ctx, NULL, 0, NULL) != 1 ||
 		    HMAC_Update(&mac->evp_ctx, b, sizeof(b)) != 1 ||
 		    HMAC_Update(&mac->evp_ctx, data, datalen) != 1 ||
-		    HMAC_Final(&mac->evp_ctx, m, NULL) != 1)
+		    HMAC_Final(&mac->evp_ctx, u.m, NULL) != 1)
 			return SSH_ERR_LIBCRYPTO_ERROR;
 		break;
 	case SSH_UMAC:
 		POKE_U64(nonce, seqno);
 		umac_update(mac->umac_ctx, data, datalen);
-		umac_final(mac->umac_ctx, m, nonce);
+		umac_final(mac->umac_ctx, u.m, nonce);
 		break;
 	case SSH_UMAC128:
 		put_u64(nonce, seqno);
 		umac128_update(mac->umac_ctx, data, datalen);
-		umac128_final(mac->umac_ctx, m, nonce);
+		umac128_final(mac->umac_ctx, u.m, nonce);
 		break;
 	default:
 		return SSH_ERR_INVALID_ARGUMENT;
@@ -178,7 +204,7 @@ mac_compute(struct sshmac *mac, u_int32_t seqno, const u_char *data, int datalen
 	if (digest != NULL) {
 		if (dlen > mac->mac_len)
 			dlen = mac->mac_len;
-		memcpy(digest, m, dlen);
+		memcpy(digest, u.m, dlen);
 	}
 	return 0;
 }

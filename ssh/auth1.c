@@ -1,4 +1,4 @@
-/* $OpenBSD: auth1.c,v 1.77 2012/12/02 20:34:09 djm Exp $ */
+/* $OpenBSD: auth1.c,v 1.79 2013/05/19 02:42:42 djm Exp $ */
 /*
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
  *                    All rights reserved
@@ -40,17 +40,17 @@
 /* import */
 extern ServerOptions options;
 
-static int auth1_process_password(struct ssh *, char *, size_t);
-static int auth1_process_rsa(struct ssh *, char *, size_t);
-static int auth1_process_rhosts_rsa(struct ssh *, char *, size_t);
-static int auth1_process_tis_challenge(struct ssh *, char *, size_t);
-static int auth1_process_tis_response(struct ssh *, char *, size_t);
+static int auth1_process_password(struct ssh *);
+static int auth1_process_rsa(struct ssh *);
+static int auth1_process_rhosts_rsa(struct ssh *);
+static int auth1_process_tis_challenge(struct ssh *);
+static int auth1_process_tis_response(struct ssh *);
 
 struct AuthMethod1 {
 	int type;
 	char *name;
 	int *enabled;
-	int (*method)(struct ssh *, char *, size_t);
+	int (*method)(struct ssh *);
 };
 
 const struct AuthMethod1 auth1_methods[] = {
@@ -105,11 +105,11 @@ get_authname(int type)
 
 /*ARGSUSED*/
 static int
-auth1_process_password(struct ssh *ssh, char *info, size_t infolen)
+auth1_process_password(struct ssh *ssh)
 {
-	Authctxt *authctxt = ssh->authctxt;
+	struct authctxt *authctxt = ssh->authctxt;
 	int r, authenticated = 0;
-	u_char *password;
+	char *password;
 	size_t dlen;
 
 	/*
@@ -117,7 +117,7 @@ auth1_process_password(struct ssh *ssh, char *info, size_t infolen)
 	 * transmitted over the encrypted channel so it is
 	 * not visible to an outside observer.
 	 */
-	if ((r = sshpkt_get_string(ssh, &password, &dlen)) != 0 ||
+	if ((r = sshpkt_get_cstring(ssh, &password, &dlen)) != 0 ||
 	    (r = sshpkt_get_end(ssh)) != 0)
 		fatal("%s: %s", __func__, ssh_err(r));
 
@@ -125,16 +125,16 @@ auth1_process_password(struct ssh *ssh, char *info, size_t infolen)
 	authenticated = PRIVSEP(auth_password(authctxt, password));
 
 	memset(password, 0, dlen);
-	xfree(password);
+	free(password);
 
 	return (authenticated);
 }
 
 /*ARGSUSED*/
 static int
-auth1_process_rsa(struct ssh *ssh, char *info, size_t infolen)
+auth1_process_rsa(struct ssh *ssh)
 {
-	Authctxt *authctxt = ssh->authctxt;
+	struct authctxt *authctxt = ssh->authctxt;
 	int r, authenticated = 0;
 	BIGNUM *n;
 
@@ -153,9 +153,9 @@ auth1_process_rsa(struct ssh *ssh, char *info, size_t infolen)
 
 /*ARGSUSED*/
 static int
-auth1_process_rhosts_rsa(struct ssh *ssh, char *info, size_t infolen)
+auth1_process_rhosts_rsa(struct ssh *ssh)
 {
-	Authctxt *authctxt = ssh->authctxt;
+	struct authctxt *authctxt = ssh->authctxt;
 	int keybits, authenticated = 0;
 	u_int bits;
 	char *client_user;
@@ -189,17 +189,17 @@ auth1_process_rhosts_rsa(struct ssh *ssh, char *info, size_t infolen)
 	    client_host_key);
 	sshkey_free(client_host_key);
 
-	snprintf(info, infolen, " ruser %.100s", client_user);
-	xfree(client_user);
+	auth_info(authctxt, "ruser %.100s", client_user);
+	free(client_user);
 
 	return (authenticated);
 }
 
 /*ARGSUSED*/
 static int
-auth1_process_tis_challenge(struct ssh *ssh, char *info, size_t infolen)
+auth1_process_tis_challenge(struct ssh *ssh)
 {
-	Authctxt *authctxt = ssh->authctxt;
+	struct authctxt *authctxt = ssh->authctxt;
 	char *challenge;
 	int r;
 
@@ -219,20 +219,20 @@ auth1_process_tis_challenge(struct ssh *ssh, char *info, size_t infolen)
 
 /*ARGSUSED*/
 static int
-auth1_process_tis_response(struct ssh *ssh, char *info, size_t infolen)
+auth1_process_tis_response(struct ssh *ssh)
 {
-	Authctxt *authctxt = ssh->authctxt;
+	struct authctxt *authctxt = ssh->authctxt;
 	int authenticated = 0;
-	u_char *response;
+	char *response;
 	size_t dlen;
 	int r;
 
-	if ((r = sshpkt_get_string(ssh, &response, &dlen)) != 0 ||
+	if ((r = sshpkt_get_cstring(ssh, &response, &dlen)) != 0 ||
 	    (r = sshpkt_get_end(ssh)) != 0)
 		fatal("%s: %s", __func__, ssh_err(r));
 	authenticated = verify_response(authctxt, response);
 	memset(response, 'r', dlen);
-	xfree(response);
+	free(response);
 
 	return (authenticated);
 }
@@ -244,9 +244,8 @@ auth1_process_tis_response(struct ssh *ssh, char *info, size_t infolen)
 static void
 do_authloop(struct ssh *ssh)
 {
-	Authctxt *authctxt = ssh->authctxt;
+	struct authctxt *authctxt = ssh->authctxt;
 	int authenticated = 0;
-	char info[1024];
 	int r, type = 0;
 	const struct AuthMethod1 *meth;
 
@@ -259,7 +258,7 @@ do_authloop(struct ssh *ssh)
 	    (!options.kerberos_authentication || options.kerberos_or_local_passwd) &&
 #endif
 	    PRIVSEP(auth_password(authctxt, ""))) {
-		auth_log(authctxt, 1, 0, "without authentication", NULL, "");
+		auth_log(authctxt, 1, 0, "without authentication", NULL);
 		return;
 	}
 
@@ -272,8 +271,6 @@ do_authloop(struct ssh *ssh)
 	for (;;) {
 		/* default to fail */
 		authenticated = 0;
-
-		info[0] = '\0';
 
 		/* Get a packet from the client. */
 		type = ssh_packet_read(ssh);
@@ -290,7 +287,7 @@ do_authloop(struct ssh *ssh)
 			goto skip;
 		}
 
-		authenticated = meth->method(ssh, info, sizeof(info));
+		authenticated = meth->method(ssh);
 		if (authenticated == -1)
 			continue; /* "postponed" */
 
@@ -309,8 +306,7 @@ do_authloop(struct ssh *ssh)
 
  skip:
 		/* Log before sending the reply */
-		auth_log(authctxt, authenticated, 0, get_authname(type),
-		    NULL, info);
+		auth_log(authctxt, authenticated, 0, get_authname(type), NULL);
 
 		if (authenticated)
 			return;
@@ -332,7 +328,7 @@ do_authloop(struct ssh *ssh)
 void
 do_authentication(struct ssh *ssh)
 {
-	Authctxt *authctxt = ssh->authctxt;
+	struct authctxt *authctxt = ssh->authctxt;
 	char *user, *style = NULL;
 	int r;
 

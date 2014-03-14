@@ -104,7 +104,6 @@ deattack_init(struct deattack_ctx *dctx)
 int
 detect_attack(struct deattack_ctx *dctx, const u_char *buf, u_int32_t len)
 {
-	u_int16_t *tmp;
 	u_int32_t i, j, l, same;
 	const u_char *c, *d;
 
@@ -120,13 +119,11 @@ detect_attack(struct deattack_ctx *dctx, const u_char *buf, u_int32_t len)
 		dctx->n = l;
 	} else {
 		if (l > dctx->n) {
-			if ((tmp = reallocn(dctx->h, l,
-			    HASH_ENTRYSIZE)) == NULL) {
+			if (reallocn((void **)&dctx->h, l, HASH_ENTRYSIZE) != 0) {
 				free(dctx->h);
 				dctx->h = NULL;
 				return DEATTACK_ERROR;
 			}
-			dctx->h = tmp;
 			dctx->n = l;
 		}
 	}

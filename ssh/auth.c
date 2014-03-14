@@ -1,4 +1,4 @@
-/* $OpenBSD: auth.c,v 1.99 2012/12/14 05:26:43 dtucker Exp $ */
+/* $OpenBSD: auth.c,v 1.103 2013/05/19 02:42:42 djm Exp $ */
 /*
  * Copyright (c) 2000 Markus Friedl.  All rights reserved.
  *
@@ -58,6 +58,8 @@
 #include "authfile.h"
 #include "monitor_wrap.h"
 #include "err.h"
+#include "krl.h"
+#include "compat.h"
 
 /* import */
 extern ServerOptions options;
@@ -99,17 +101,17 @@ allowed_user(struct passwd * pw)
 		if (stat(shell, &st) != 0) {
 			logit("User %.100s not allowed because shell %.100s "
 			    "does not exist", pw->pw_name, shell);
-			xfree(shell);
+			free(shell);
 			return 0;
 		}
 		if (S_ISREG(st.st_mode) == 0 ||
 		    (st.st_mode & (S_IXOTH|S_IXUSR|S_IXGRP)) == 0) {
 			logit("User %.100s not allowed because shell %.100s "
 			    "is not executable", pw->pw_name, shell);
-			xfree(shell);
+			free(shell);
 			return 0;
 		}
-		xfree(shell);
+		free(shell);
 	}
 
 	if (options.num_deny_users > 0 || options.num_allow_users > 0 ||
@@ -180,8 +182,25 @@ allowed_user(struct passwd * pw)
 }
 
 void
-auth_log(Authctxt *authctxt, int authenticated, int partial,
-    const char *method, const char *submethod, const char *info)
+auth_info(struct authctxt *authctxt, const char *fmt, ...)
+{
+	va_list ap;
+	int i;
+
+	free(authctxt->info);
+	authctxt->info = NULL;
+
+	va_start(ap, fmt);
+	i = vasprintf(&authctxt->info, fmt, ap);
+	va_end(ap);
+
+	if (i < 0 || authctxt->info == NULL)
+		fatal("vasprintf failed");
+}
+
+void
+auth_log(struct authctxt *authctxt, int authenticated, int partial,
+    const char *method, const char *submethod)
 {
 	void (*authlog) (const char *fmt,...) = verbose;
 	char *authmsg;
@@ -203,15 +222,19 @@ auth_log(Authctxt *authctxt, int authenticated, int partial,
 	else
 		authmsg = authenticated ? "Accepted" : "Failed";
 
-	authlog("%s %s%s%s for %s%.100s from %.200s port %d%s",
+	authlog("%s %s%s%s for %s%.100s from %.200s port %d %s%s%s",
 	    authmsg,
 	    method,
 	    submethod != NULL ? "/" : "", submethod == NULL ? "" : submethod,
 	    authctxt->valid ? "" : "invalid user ",
 	    authctxt->user,
 	    ssh_remote_ipaddr(active_state),	/* XXX */
-	    get_remote_port(),
-	    info);
+	    ssh_get_remote_port(active_state),
+	    compat20 ? "ssh2" : "ssh1",
+	    authctxt->info != NULL ? ": " : "",
+	    authctxt->info != NULL ? authctxt->info : "");
+	free(authctxt->info);
+	authctxt->info = NULL;
 }
 
 /*
@@ -267,7 +290,7 @@ expand_authorized_keys(const char *filename, struct passwd *pw)
 	i = snprintf(ret, sizeof(ret), "%s/%s", pw->pw_dir, file);
 	if (i < 0 || (size_t)i >= sizeof(ret))
 		fatal("expand_authorized_keys: path too long");
-	xfree(file);
+	free(file);
 	return (xstrdup(ret));
 }
 
@@ -309,7 +332,7 @@ check_key_in_hostfiles(struct passwd *pw, struct sshkey *key, const char *host,
 			load_hostkeys(hostkeys, host, user_hostfile);
 			restore_uid();
 		}
-		xfree(user_hostfile);
+		free(user_hostfile);
 	}
 	host_status = check_key_in_hostkeys(hostkeys, key, &found);
 	if (host_status == HOST_REVOKED)
@@ -333,7 +356,7 @@ check_key_in_hostfiles(struct passwd *pw, struct sshkey *key, const char *host,
  *
  * XXX Should any specific check be done for sym links ?
  *
- * Takes an the file name, its stat information (preferably from fstat() to
+ * Takes a file name, its stat information (preferably from fstat() to
  * avoid races), the uid of the expected owner, their home directory and an
  * error buffer plus max size as arguments.
  *
@@ -512,30 +535,47 @@ getpwnamallow(const char *user)
 
 /* Returns 1 if key is revoked by revoked_keys_file, 0 otherwise */
 int
-auth_key_is_revoked(struct sshkey *key)
+auth_key_is_revoked(struct sshkey *k)
 {
 	char *key_fp;
 	int r;
 
 	if (options.revoked_keys_file == NULL)
 		return 0;
+	switch ((r = ssh_krl_file_contains_key(options.revoked_keys_file, k))) {
+	case 0:
+		/* Not revoked */
+		return 0;
+	case SSH_ERR_KRL_BAD_MAGIC:
+		/* Not a KRL */
+		break;
+	case SSH_ERR_KEY_REVOKED:
+		goto revoked;	
+	default:
+		error("KRL error in file %s: %s, refusing key",
+		    options.revoked_keys_file, ssh_err(r));
+		return 1;
+	}
 
-	switch ((r = sshkey_in_file(key, options.revoked_keys_file, 0))) {
+	/* Fall back to treating the file as a list of keys */
+	debug3("%s: treating %s as a key list", __func__,
+	    options.revoked_keys_file);
+
+	switch ((r = sshkey_in_file(k, options.revoked_keys_file, 0))) {
 	case SSH_ERR_KEY_NOT_FOUND:
 		/* key not revoked */
 		return 0;
-	default:
-		/* Error opening revoked_keys_file: refuse all keys */
-		error("Error checking revoked keys file \"%s\": %s, "
-		    "refusing public key authentication",
-		    options.revoked_keys_file, ssh_err(r));
-		return 1;
 	case 0:
 		/* found: key revoked */
-		key_fp = sshkey_fingerprint(key, SSH_FP_MD5, SSH_FP_HEX);
+ revoked:
+		key_fp = sshkey_fingerprint(k, SSH_FP_MD5, SSH_FP_HEX);
 		error("WARNING: authentication attempt with a revoked "
-		    "%s key %s ", sshkey_type(key), key_fp);
-		xfree(key_fp);
+		    "%s key %s ", sshkey_type(k), key_fp);
+		free(key_fp);
+		return 1;
+	default:
+		error("Error in revoked keys file %s: %s, refusing key",
+		    options.revoked_keys_file, ssh_err(r));
 		return 1;
 	}
 	/* NOTREACHED */
@@ -572,7 +612,7 @@ auth_debug_send(void)
 			fatal("%s: sshbuf_get_cstring: %s",
 			    __func__, ssh_err(r));
 		ssh_packet_send_debug(ssh, "%s", msg);
-		xfree(msg);
+		free(msg);
 	}
 }
 

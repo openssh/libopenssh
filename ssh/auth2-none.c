@@ -59,7 +59,7 @@ userauth_none(struct ssh *ssh)
 	return (0);
 }
 
-Authmethod method_none = {
+struct authmethod method_none = {
 	"none",
 	userauth_none,
 	&none_enabled

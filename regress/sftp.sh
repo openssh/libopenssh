@@ -1,10 +1,7 @@
-#	$OpenBSD: sftp.sh,v 1.3 2009/08/13 01:11:55 djm Exp $
+#	$OpenBSD: sftp.sh,v 1.5 2013/05/17 10:28:11 dtucker Exp $
 #	Placed in the Public Domain.
 
 tid="basic sftp put/get"
-
-DATA=/bin/ls
-COPY=${OBJ}/copy
 
 BUFFERSIZE="5 1000 32000 64000"
 REQUESTS="1 2 10"
@@ -22,8 +19,10 @@ EOF
 		r=$?
 		if [ $r -ne 0 ]; then
 			fail "sftp failed with $r"
+		else 
+			cmp $DATA ${COPY}.1 || fail "corrupted copy after get"
+			cmp $DATA ${COPY}.2 || fail "corrupted copy after put"
 		fi
-		cmp $DATA ${COPY}.1 || fail "corrupted copy after get"
-		cmp $DATA ${COPY}.2 || fail "corrupted copy after put"
 	done
 done
+rm -f ${COPY}.1 ${COPY}.2                

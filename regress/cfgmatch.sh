@@ -1,4 +1,4 @@
-#	$OpenBSD: cfgmatch.sh,v 1.6 2011/06/03 05:35:10 dtucker Exp $
+#	$OpenBSD: cfgmatch.sh,v 1.8 2013/05/17 00:37:40 dtucker Exp $
 #	Placed in the Public Domain.
 
 tid="sshd_config match"
@@ -15,7 +15,7 @@ start_client()
 	rm -f $pidfile
 	${SSH} -q -$p $fwd "$@" somehost \
 	    exec sh -c \'"echo \$\$ > $pidfile; exec sleep 100"\' \
-	    >>$TEST_SSH_LOGFILE 2>&1 &
+	    >>$TEST_REGRESS_LOGFILE 2>&1 &
 	client_pid=$!
 	# Wait for remote end
 	n=0
@@ -74,9 +74,9 @@ for p in 1 2; do
 done
 
 # Retry previous with key option, should also be denied.
-echo -n 'permitopen="127.0.0.1:'$PORT'" ' >$OBJ/authorized_keys_$USER
+printf 'permitopen="127.0.0.1:'$PORT'" ' >$OBJ/authorized_keys_$USER
 cat $OBJ/rsa.pub >> $OBJ/authorized_keys_$USER
-echo -n 'permitopen="127.0.0.1:'$PORT'" ' >>$OBJ/authorized_keys_$USER
+printf 'permitopen="127.0.0.1:'$PORT'" ' >>$OBJ/authorized_keys_$USER
 cat $OBJ/rsa1.pub >> $OBJ/authorized_keys_$USER
 for p in 1 2; do
 	trace "match permitopen proxy w/key opts proto $p"

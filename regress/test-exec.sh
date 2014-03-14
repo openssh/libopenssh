@@ -1,4 +1,4 @@
-#	$OpenBSD: test-exec.sh,v 1.37 2010/02/24 06:21:56 djm Exp $
+#	$OpenBSD: test-exec.sh,v 1.46 2013/06/21 02:26:26 djm Exp $
 #	Placed in the Public Domain.
 
 USER=`id -un`
@@ -92,13 +92,47 @@ if [ "x$TEST_SSH_CONCH" != "x" ]; then
 fi
 
 # Path to sshd must be absolute for rexec
-if [ ! -x /$SSHD ]; then
-	SSHD=`which sshd`
+case "$SSHD" in
+/*) ;;
+*) SSHD=`which sshd` ;;
+esac
+
+# Logfiles.
+# SSH_LOGFILE should be the debug output of ssh(1) only
+# SSHD_LOGFILE should be the debug output of sshd(8) only
+# REGRESS_LOGFILE is the output of the test itself stdout and stderr
+if [ "x$TEST_SSH_LOGFILE" = "x" ]; then
+	TEST_SSH_LOGFILE=$OBJ/ssh.log
+fi
+if [ "x$TEST_SSHD_LOGFILE" = "x" ]; then
+	TEST_SSHD_LOGFILE=$OBJ/sshd.log
+fi
+if [ "x$TEST_REGRESS_LOGFILE" = "x" ]; then
+	TEST_REGRESS_LOGFILE=$OBJ/regress.log
 fi
 
-if [ "x$TEST_SSH_LOGFILE" = "x" ]; then
-	TEST_SSH_LOGFILE=/dev/null
-fi
+# truncate logfiles
+>$TEST_SSH_LOGFILE
+>$TEST_SSHD_LOGFILE
+>$TEST_REGRESS_LOGFILE
+
+# Create wrapper ssh with logging.  We can't just specify "SSH=ssh -E..."
+# because sftp and scp don't handle spaces in arguments.
+SSHLOGWRAP=$OBJ/ssh-log-wrapper.sh
+echo "#!/bin/sh" > $SSHLOGWRAP
+echo "exec ${SSH} -E${TEST_SSH_LOGFILE} "'"$@"' >>$SSHLOGWRAP
+
+chmod a+rx $OBJ/ssh-log-wrapper.sh
+SSH="$SSHLOGWRAP"
+
+# Some test data.  We make a copy because some tests will overwrite it.
+# The tests may assume that $DATA exists and is writable and $COPY does
+# not exist.
+DATANAME=data
+DATA=$OBJ/${DATANAME}
+cat ${SSH} ${SSHD} >${DATA}
+COPY=$OBJ/copy
+rm -f ${COPY}
 
 # these should be used in tests
 export SSH SSHD SSHAGENT SSHADD SSHKEYGEN SSHKEYSCAN SFTP SFTPSERVER SCP
@@ -108,7 +142,7 @@ export SSH SSHD SSHAGENT SSHADD SSHKEYGEN SSHKEYSCAN SFTP SFTPSERVER SCP
 cleanup ()
 {
 	if [ -f $PIDFILE ]; then
-		pid=`cat $PIDFILE`
+		pid=`$SUDO cat $PIDFILE`
 		if [ "X$pid" = "X" ]; then
 			echo no sshd running
 		else
@@ -129,9 +163,26 @@ cleanup ()
 	fi
 }
 
+start_debug_log ()
+{
+	echo "trace: $@" >$TEST_REGRESS_LOGFILE
+	echo "trace: $@" >$TEST_SSH_LOGFILE
+	echo "trace: $@" >$TEST_SSHD_LOGFILE
+}
+
+save_debug_log ()
+{
+	echo $@ >>$TEST_REGRESS_LOGFILE
+	echo $@ >>$TEST_SSH_LOGFILE
+	echo $@ >>$TEST_SSHD_LOGFILE
+	(cat $TEST_REGRESS_LOGFILE; echo) >>$OBJ/failed-regress.log
+	(cat $TEST_SSH_LOGFILE; echo) >>$OBJ/failed-ssh.log
+	(cat $TEST_SSHD_LOGFILE; echo) >>$OBJ/failed-sshd.log
+}
+
 trace ()
 {
-	echo "trace: $@" >>$TEST_SSH_LOGFILE
+	start_debug_log $@
 	if [ "X$TEST_SSH_TRACE" = "Xyes" ]; then
 		echo "$@"
 	fi
@@ -139,7 +190,7 @@ trace ()
 
 verbose ()
 {
-	echo "verbose: $@" >>$TEST_SSH_LOGFILE
+	start_debug_log $@
 	if [ "X$TEST_SSH_QUIET" != "Xyes" ]; then
 		echo "$@"
 	fi
@@ -148,15 +199,16 @@ verbose ()
 
 fail ()
 {
-	echo "FAIL: $@" >>$TEST_SSH_LOGFILE
+	save_debug_log "FAIL: $@"
 	RESULT=1
 	echo "$@"
+
 }
 
 fatal ()
 {
-	echo "FATAL: $@" >>$TEST_SSH_LOGFILE
-	echo -n "FATAL: "
+	save_debug_log "FATAL: $@"
+	printf "FATAL: "
 	fail "$@"
 	cleanup
 	exit $RESULT
@@ -176,7 +228,7 @@ cat << EOF > $OBJ/sshd_config
 	#ListenAddress		::1
 	PidFile			$PIDFILE
 	AuthorizedKeysFile	$OBJ/authorized_keys_%u
-	LogLevel		DEBUG
+	LogLevel		DEBUG3
 	AcceptEnv		_XXX_TEST_*
 	AcceptEnv		_XXX_TEST
 	Subsystem	sftp	$SFTPSERVER
@@ -211,6 +263,7 @@ Host *
 	RhostsRSAAuthentication	no
 	BatchMode		yes
 	StrictHostKeyChecking	yes
+	LogLevel		DEBUG3
 EOF
 
 if [ ! -z "$TEST_SSH_SSH_CONFOPTS" ]; then
@@ -223,13 +276,15 @@ rm -f $OBJ/known_hosts $OBJ/authorized_keys_$USER
 trace "generate keys"
 for t in rsa rsa1; do
 	# generate user key
-	rm -f $OBJ/$t
-	${SSHKEYGEN} -q -N '' -t $t  -f $OBJ/$t ||\
-		fail "ssh-keygen for $t failed"
+	if [ ! -f $OBJ/$t ] || [ ${SSHKEYGEN} -nt $OBJ/$t ]; then
+		rm -f $OBJ/$t
+		${SSHKEYGEN} -q -N '' -t $t  -f $OBJ/$t ||\
+			fail "ssh-keygen for $t failed"
+	fi
 
 	# known hosts file for client
 	(
-		echo -n 'localhost-with-alias,127.0.0.1,::1 '
+		printf 'localhost-with-alias,127.0.0.1,::1 '
 		cat $OBJ/$t.pub
 	) >> $OBJ/known_hosts
 
@@ -284,7 +339,7 @@ if test "$REGRESS_INTEROP_PUTTY" = "yes" ; then
 	echo "Hostname=127.0.0.1" >> ${OBJ}/.putty/sessions/localhost_proxy
 	echo "PortNumber=$PORT" >> ${OBJ}/.putty/sessions/localhost_proxy
 	echo "ProxyMethod=5" >> ${OBJ}/.putty/sessions/localhost_proxy
-	echo "ProxyTelnetCommand=sh ${SRC}/sshd-log-wrapper.sh ${SSHD} ${TEST_SSH_LOGFILE} -i -f $OBJ/sshd_proxy" >> ${OBJ}/.putty/sessions/localhost_proxy 
+	echo "ProxyTelnetCommand=sh ${SRC}/sshd-log-wrapper.sh ${SSHD} ${TEST_SSHD_LOGFILE} -i -f $OBJ/sshd_proxy" >> ${OBJ}/.putty/sessions/localhost_proxy
 
 	REGRESS_INTEROP_PUTTY=yes
 fi
@@ -292,7 +347,7 @@ fi
 # create a proxy version of the client config
 (
 	cat $OBJ/ssh_config
-	echo proxycommand sh ${SRC}/sshd-log-wrapper.sh ${SSHD} ${TEST_SSH_LOGFILE} -i -f $OBJ/sshd_proxy
+	echo proxycommand ${SUDO} sh ${SRC}/sshd-log-wrapper.sh ${SSHD} ${TEST_SSHD_LOGFILE} -i -f $OBJ/sshd_proxy
 ) > $OBJ/ssh_proxy
 
 # check proxy config
@@ -302,11 +357,11 @@ start_sshd ()
 {
 	# start sshd
 	$SUDO ${SSHD} -f $OBJ/sshd_config "$@" -t || fatal "sshd_config broken"
-	$SUDO ${SSHD} -f $OBJ/sshd_config -e "$@" >>$TEST_SSH_LOGFILE 2>&1
+	$SUDO ${SSHD} -f $OBJ/sshd_config "$@" -E$TEST_SSHD_LOGFILE
 
 	trace "wait for sshd"
 	i=0;
-	while [ ! -f $PIDFILE -a $i -lt 5 ]; do
+	while [ ! -f $PIDFILE -a $i -lt 10 ]; do
 		i=`expr $i + 1`
 		sleep $i
 	done

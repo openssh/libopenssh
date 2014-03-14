@@ -3,15 +3,20 @@
 .include <bsd.own.mk>
 .include <bsd.obj.mk>
 
+# enable warnings
+WARNINGS=Yes
+
 CDIAGFLAGS=	-Wall
 CDIAGFLAGS+=	-Werror
+CDIAGFLAGS+=	-Wextra
 CDIAGFLAGS+=	-Wpointer-arith
 CDIAGFLAGS+=	-Wstrict-prototypes
 CDIAGFLAGS+=	-Wmissing-prototypes
 CDIAGFLAGS+=	-Wunused
 CDIAGFLAGS+=	-Wsign-compare
 CDIAGFLAGS+=	-Wshadow
-CDIAGFLAGS+=	-Wformat
+CDIAGFLAGS+=	-Wpointer-sign
+#CDIAGFLAGS+=	-Wno-unused-parameter #-Wno-error=unused-parameter
 .if (${CC:L} == "gcc" || ${CC:L} == "cc")
 CDIAGFLAGS+=	-Wbounded
 .endif

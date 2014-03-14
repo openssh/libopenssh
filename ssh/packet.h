@@ -1,4 +1,4 @@
-/* $OpenBSD: packet.h,v 1.57 2012/01/25 19:40:09 markus Exp $ */
+/* $OpenBSD: packet.h,v 1.59 2013/07/12 00:19:59 djm Exp $ */
 
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
@@ -54,8 +54,9 @@ struct ssh {
 	char *host;
 	struct sockaddr *hostaddr;
 
-	/* cached remote ip address */
+	/* cached remote ip address and port*/
 	char *remote_ipaddr;
+	int remote_port;
 
 	/* Dispatcher table */
 	dispatch_fn *dispatch[DISPATCH_MAX];
@@ -103,7 +104,9 @@ int      ssh_packet_read_seqnr(struct ssh *, u_char *, u_int32_t *seqnr_p);
 int      ssh_packet_read_poll_seqnr(struct ssh *, u_char *, u_int32_t *seqnr_p);
 
 const void *ssh_packet_get_string_ptr(struct ssh *, u_int *length_ptr);
-void     ssh_packet_disconnect(struct ssh *, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+void     ssh_packet_disconnect(struct ssh *, const char *fmt, ...)
+	__attribute__((format(printf, 2, 3)))
+	__attribute__((noreturn));
 void     ssh_packet_send_debug(struct ssh *, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 
 int	 ssh_set_newkeys(struct ssh *, int mode);
@@ -137,7 +140,8 @@ int	 ssh_packet_set_state(struct ssh *, struct sshbuf *);
 const char *ssh_remote_ipaddr(struct ssh *);
 
 int	 ssh_packet_need_rekeying(struct ssh *);
-void	 ssh_packet_set_rekey_limit(struct ssh *, u_int32_t);
+void	 ssh_packet_set_rekey_limits(struct ssh *, u_int32_t, time_t);
+time_t	 ssh_packet_get_rekey_timeout(struct ssh *);
 
 /* XXX FIXME */
 void	 ssh_packet_backup_state(struct ssh *, struct ssh *);

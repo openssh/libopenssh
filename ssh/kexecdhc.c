@@ -1,4 +1,4 @@
-/* $OpenBSD: kexecdhc.c,v 1.2 2010/09/22 05:01:29 djm Exp $ */
+/* $OpenBSD: kexecdhc.c,v 1.4 2013/05/17 00:13:13 djm Exp $ */
 /*
  * Copyright (c) 2001 Markus Friedl.  All rights reserved.
  * Copyright (c) 2010 Damien Miller.  All rights reserved.
@@ -53,13 +53,9 @@ kexecdh_client(struct ssh *ssh)
 	EC_KEY *client_key = NULL;
 	const EC_GROUP *group;
 	const EC_POINT *public_key;
-	int r, curve_nid;
+	int r;
 
-	if ((curve_nid = kex_ecdh_name_to_nid(kex->name)) == -1) {
-		r = SSH_ERR_INVALID_ARGUMENT;
-		goto out;
-	}
-	if ((client_key = EC_KEY_new_by_curve_name(curve_nid)) == NULL) {
+	if ((client_key = EC_KEY_new_by_curve_name(kex->ec_nid)) == NULL) {
 		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}

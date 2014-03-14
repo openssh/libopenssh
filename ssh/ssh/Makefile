@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.56 2012/08/24 19:50:19 deraadt Exp $
+#	$OpenBSD: Makefile,v 1.61 2013/07/02 13:32:38 markus Exp $
 
 .PATH:		${.CURDIR}/..
 
@@ -18,6 +18,9 @@ SRCS=	ssh.c readconf.c clientloop.c sshtty.c \
 
 .include <bsd.own.mk>
 
+# XXX leave on while refactoring to ensure we don't break it.
+KERBEROS5=yes
+
 .if (${KERBEROS5:L} == "yes")
 CFLAGS+= -DKRB5 -I${DESTDIR}/usr/include/kerberosV -DGSSAPI
 .endif # KERBEROS5
@@ -26,8 +29,9 @@ CFLAGS+= -DKRB5 -I${DESTDIR}/usr/include/kerberosV -DGSSAPI
 
 .if (${KERBEROS5:L} == "yes")
 DPADD+=  ${LIBGSSAPI} ${LIBKRB5}
-LDADD+=  -lgssapi -lkrb5
+LDADD+=  -lgssapi -lkrb5 -lasn1
+LDADD+=  -lwind -lroken -lcom_err -lpthread -lheimbase
 .endif # KERBEROS5
 
-DPADD+=	${LIBCRYPTO} ${LIBZ}
-LDADD+=	-lcrypto -lz
+LDADD+=	-lcrypto -lutil -lz
+DPADD+=	${LIBCRYPTO} ${LIBUTIL} ${LIBZ}

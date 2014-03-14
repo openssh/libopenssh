@@ -1,4 +1,4 @@
-/* $OpenBSD: key.h,v 1.34 2012/05/23 03:28:28 djm Exp $ */
+/* $OpenBSD: key.h,v 1.37 2013/05/19 02:42:42 djm Exp $ */
 
 /*
  * Copyright (c) 2000, 2001 Markus Friedl.  All rights reserved.
@@ -112,9 +112,9 @@ int		 sshkey_demote(const struct sshkey *, struct sshkey **);
 int		 sshkey_equal_public(const struct sshkey *,
     const struct sshkey *);
 int		 sshkey_equal(const struct sshkey *, const struct sshkey *);
-char		*sshkey_fingerprint(struct sshkey *,
+char		*sshkey_fingerprint(const struct sshkey *,
     enum sshkey_fp_type, enum sshkey_fp_rep);
-u_char		*sshkey_fingerprint_raw(struct sshkey *,
+u_char		*sshkey_fingerprint_raw(const struct sshkey *,
     enum sshkey_fp_type, size_t *);
 const char	*sshkey_type(const struct sshkey *);
 const char	*sshkey_cert_type(const struct sshkey *);
@@ -124,7 +124,7 @@ u_int		 sshkey_size(const struct sshkey *);
 
 int		 sshkey_generate(int type, u_int bits, struct sshkey **keyp);
 int		 sshkey_from_private(const struct sshkey *, struct sshkey **);
-int	 sshkey_type_from_name(char *);
+int	 sshkey_type_from_name(const char *);
 int	 sshkey_is_cert(const struct sshkey *);
 int	 sshkey_type_plain(int);
 int	 sshkey_to_certified(struct sshkey *, int);
@@ -134,7 +134,7 @@ int	 sshkey_cert_copy(const struct sshkey *, struct sshkey *);
 int	 sshkey_cert_check_authority(const struct sshkey *, int, int,
     const char *,
 	    const char **);
-int	 sshkey_cert_is_legacy(struct sshkey *);
+int	 sshkey_cert_is_legacy(const struct sshkey *);
 
 int		 sshkey_ecdsa_nid_from_name(const char *);
 int		 sshkey_curve_name_to_nid(const char *);
@@ -145,13 +145,16 @@ int		 sshkey_ecdsa_key_to_nid(EC_KEY *);
 const EVP_MD *	 sshkey_ec_nid_to_evpmd(int nid);
 int		 sshkey_ec_validate_public(const EC_GROUP *, const EC_POINT *);
 int		 sshkey_ec_validate_private(const EC_KEY *);
-
-int		 sshkey_from_blob(const u_char *, size_t, struct sshkey **);
-int		 sshkey_to_blob_buf(const struct sshkey *, struct sshbuf *);
-int		 sshkey_to_blob(const struct sshkey *, u_char **, size_t *);
 const char	*sshkey_ssh_name(const struct sshkey *);
 const char	*sshkey_ssh_name_plain(const struct sshkey *);
 int		 sshkey_names_valid2(const char *);
+char		*sshkey_alg_list(void);
+
+int	 sshkey_from_blob(const u_char *, size_t, struct sshkey **);
+int	 sshkey_to_blob_buf(const struct sshkey *, struct sshbuf *);
+int	 sshkey_to_blob(const struct sshkey *, u_char **, size_t *);
+int	 sshkey_plain_to_blob_buf(const struct sshkey *, struct sshbuf *);
+int	 sshkey_plain_to_blob(const struct sshkey *, u_char **, size_t *);
 
 int	 sshkey_sign(const struct sshkey *, u_char **, size_t *,
     const u_char *, size_t, u_int);
@@ -179,6 +182,5 @@ int ssh_ecdsa_verify(const struct sshkey *key,
     const u_char *signature, size_t signaturelen,
     const u_char *data, size_t datalen, u_int compat);
 #endif
-
 
 #endif

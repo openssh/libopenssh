@@ -1,4 +1,4 @@
-/* $OpenBSD: sshd.c,v 1.396 2012/11/04 11:09:15 djm Exp $ */
+/* $OpenBSD: sshd.c,v 1.403 2013/06/05 02:27:50 dtucker Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -223,7 +223,7 @@ struct monitor *pmonitor = NULL;
 int privsep_is_preauth = 1;
 
 /* global authentication context */
-static Authctxt *the_authctxt = NULL;	/* XXX */
+static struct authctxt *the_authctxt = NULL;	/* XXX */
 
 /* sshd_config buffer */
 struct sshbuf *cfg;
@@ -629,7 +629,7 @@ privsep_preauth_child(void)
 }
 
 static int
-privsep_preauth(Authctxt *authctxt)
+privsep_preauth(struct authctxt *authctxt)
 {
 	int status;
 	pid_t pid;
@@ -697,7 +697,7 @@ privsep_preauth(Authctxt *authctxt)
 static void
 privsep_postauth(struct ssh *ssh)
 {
-	Authctxt *authctxt = ssh->authctxt;
+	struct authctxt *authctxt = ssh->authctxt;
 	u_int32_t rnd[256];
 
 	if (authctxt->pw->pw_uid == 0 || options.use_login) {
@@ -792,7 +792,7 @@ list_hostkey_types(void)
 	}
 	if ((r = sshbuf_put_u8(b, 0)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
-	ret = xstrdup(sshbuf_ptr(b));
+	ret = xstrdup((const char *)sshbuf_ptr(b));
 	sshbuf_free(b);
 	debug("list_hostkey_types: %s", ret);
 	return ret;
@@ -837,9 +837,10 @@ get_hostkey_private_by_type(int type, struct ssh *ssh)
 }
 
 struct sshkey *
-get_hostkey_by_index(int ind)
+get_hostkey_by_index(u_int ind)
 {
-	if (ind < 0 || ind >= options.num_host_key_files)
+	if (options.num_host_key_files < 0 ||
+	    ind >= (u_int)options.num_host_key_files)
 		return (NULL);
 	return (sensitive_data.host_keys[ind]);
 }
@@ -896,8 +897,9 @@ usage(void)
 	    SSH_VERSION, SSLeay_version(SSLEAY_VERSION));
 	fprintf(stderr,
 "usage: sshd [-46DdeiqTt] [-b bits] [-C connection_spec] [-c host_cert_file]\n"
-"            [-f config_file] [-g login_grace_time] [-h host_key_file]\n"
-"            [-k key_gen_time] [-o option] [-p port] [-u len]\n"
+"            [-E log_file] [-f config_file] [-g login_grace_time]\n"
+"            [-h host_key_file] [-k key_gen_time] [-o option] [-p port]\n"
+"            [-u len]\n"
 	);
 	exit(1);
 }
@@ -925,7 +927,7 @@ send_rexec_state(int fd, struct sshbuf *conf)
 	if ((m = sshbuf_new()) == NULL)
 		fatal("%s: sshbuf_new failed", __func__);
 	/* servconf.c:load_server_config() ensures a \0 at the end of cfg */
-	if ((r = sshbuf_put_cstring(m, sshbuf_ptr(conf))) != 0)
+	if ((r = sshbuf_put_cstring(m, (const char *)sshbuf_ptr(conf))) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
 
 	if (sensitive_data.server_key != NULL &&
@@ -980,7 +982,7 @@ recv_rexec_state(int fd, struct sshbuf *conf)
 	    (conf != NULL && (r = sshbuf_put(conf, cp, len + 1)) != 0) ||
 	    (r = sshbuf_get_u32(m, &key_follows)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
-	xfree(cp);
+	free(cp);
 
 	if (key_follows) {
 		if (sensitive_data.server_key != NULL)
@@ -1036,7 +1038,9 @@ server_accept_inetd(int *sock_in, int *sock_out)
 	if ((fd = open(_PATH_DEVNULL, O_RDWR, 0)) != -1) {
 		dup2(fd, STDIN_FILENO);
 		dup2(fd, STDOUT_FILENO);
-		if (fd > STDOUT_FILENO)
+		if (!log_stderr)
+			dup2(fd, STDERR_FILENO);
+		if (fd > (log_stderr ? STDERR_FILENO : STDOUT_FILENO))
 			close(fd);
 	}
 	debug("inetd sockets after dupping: %d, %d", *sock_in, *sock_out);
@@ -1143,7 +1147,7 @@ server_accept_loop(int *sock_in, int *sock_out, int *newsock, int *config_s)
 		if (received_sighup)
 			sighup_restart();
 		if (fdset != NULL)
-			xfree(fdset);
+			free(fdset);
 		fdset = (fd_set *)xcalloc(howmany(maxfd + 1, NFDBITS),
 		    sizeof(fd_mask));
 
@@ -1192,7 +1196,8 @@ server_accept_loop(int *sock_in, int *sock_out, int *newsock, int *config_s)
 			*newsock = accept(listen_socks[i],
 			    (struct sockaddr *)&from, &fromlen);
 			if (*newsock < 0) {
-				if (errno != EINTR && errno != EWOULDBLOCK)
+				if (errno != EINTR && errno != EWOULDBLOCK &&
+				    errno != ECONNABORTED)
 					error("accept: %.100s",
 					    strerror(errno));
 				if (errno == EMFILE || errno == ENFILE)
@@ -1340,13 +1345,13 @@ main(int ac, char **av)
 	int sock_in = -1, sock_out = -1, newsock = -1;
 	const char *remote_ip;
 	int r, remote_port;
-	char *line;
+	char *line, *logfile = NULL;
 	int config_s[2] = { -1 , -1 };
 	u_int n;
 	u_int64_t ibytes, obytes;
 	mode_t new_umask;
 	struct sshkey *key;
-	Authctxt *authctxt;
+	struct authctxt *authctxt;
 	struct connection_info *connection_info = get_connection_info(0, 0);
 
 	/* Save argv. */
@@ -1360,7 +1365,7 @@ main(int ac, char **av)
 	initialize_server_options(&options);
 
 	/* Parse command-line arguments. */
-	while ((opt = getopt(ac, av, "f:p:b:k:h:g:u:o:C:dDeiqrtQRT46")) != -1) {
+	while ((opt = getopt(ac, av, "f:p:b:k:h:g:u:o:C:dDeE:iqrtQRT46")) != -1) {
 		switch (opt) {
 		case '4':
 			options.address_family = AF_INET;
@@ -1389,6 +1394,9 @@ main(int ac, char **av)
 		case 'D':
 			no_daemon_flag = 1;
 			break;
+		case 'E':
+			logfile = xstrdup(optarg);
+			/* FALLTHROUGH */
 		case 'e':
 			log_stderr = 1;
 			break;
@@ -1467,7 +1475,7 @@ main(int ac, char **av)
 			if (process_server_config_line(&options, line,
 			    "command-line", 0, NULL, NULL) != 0)
 				exit(1);
-			xfree(line);
+			free(line);
 			break;
 		case '?':
 		default:
@@ -1486,6 +1494,11 @@ main(int ac, char **av)
 
 	OpenSSL_add_all_algorithms();
 
+	/* If requested, redirect the logs to the specified logfile. */
+	if (logfile != NULL) {
+		log_redirect_stderr_to(logfile);
+		free(logfile);
+	}
 	/*
 	 * Force logging to stderr until we have loaded the private host
 	 * key (unless started from inetd)
@@ -1568,7 +1581,8 @@ main(int ac, char **av)
 		exit(1);
 	}
 
-	debug("sshd version %.100s", SSH_VERSION);
+	debug("sshd version %s, %s", SSH_VERSION,
+	    SSLeay_version(SSLEAY_VERSION));
 
 	/* load private host keys */
 	sensitive_data.host_keys = xcalloc(options.num_host_key_files,
@@ -1747,7 +1761,8 @@ main(int ac, char **av)
 
 	/* Chdir to the root directory so that the current disk can be
 	   unmounted if desired. */
-	chdir("/");
+	if (chdir("/") == -1)
+		error("chdir(\"/\"): %s", strerror(errno));
 
 	/* ignore SIGPIPE */
 	signal(SIGPIPE, SIG_IGN);
@@ -1867,7 +1882,7 @@ main(int ac, char **av)
 	    setsockopt(sock_in, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof(on)) < 0)
 		error("setsockopt SO_KEEPALIVE: %.100s", strerror(errno));
 
-	if ((remote_port = get_remote_port()) < 0) {
+	if ((remote_port = ssh_get_remote_port(ssh)) < 0) {
 		debug("get_remote_port failed");
 		cleanup_exit(255);
 	}
@@ -2215,7 +2230,7 @@ do_ssh1_kex(struct ssh *ssh)
 		MD5_Update(&md, sensitive_data.ssh1_cookie, SSH_SESSION_KEY_LENGTH);
 		MD5_Final(session_key + 16, &md);
 		memset(buf, 0, bytes);
-		xfree(buf);
+		free(buf);
 		for (i = 0; i < 16; i++)
 			session_id[i] = session_key[i] ^ session_key[i + 16];
 	}
@@ -2280,6 +2295,11 @@ do_ssh2_kex(struct ssh *ssh)
 	}
 	if (options.kex_algorithms != NULL)
 		myproposal[PROPOSAL_KEX_ALGS] = options.kex_algorithms;
+
+	if (options.rekey_limit || options.rekey_interval)
+		ssh_packet_set_rekey_limits(ssh,
+		    (u_int32_t)options.rekey_limit,
+		    (time_t)options.rekey_interval);
 
 	myproposal[PROPOSAL_SERVER_HOST_KEY_ALGS] = list_hostkey_types();
 

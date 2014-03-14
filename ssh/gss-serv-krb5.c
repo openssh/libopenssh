@@ -38,6 +38,7 @@
 #include "ssh-gss.h"
 
 #include <krb5.h>
+#include <gssapi/gssapi_krb5.h>
 
 static krb5_context krb_context = NULL;
 

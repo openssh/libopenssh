@@ -1,4 +1,4 @@
-/* $OpenBSD: sshconnect1.c,v 1.70 2006/11/06 21:25:28 markus Exp $ */
+/* $OpenBSD: sshconnect1.c,v 1.71 2013/05/17 00:13:14 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -244,7 +244,7 @@ try_rsa_authentication(struct ssh *ssh, int idx)
 	 */
 	if (type == SSH_SMSG_FAILURE) {
 		debug("Server refused our key.");
-		xfree(comment);
+		free(comment);
 		return 0;
 	}
 	/* Otherwise, the server should respond with a challenge. */
@@ -314,14 +314,14 @@ try_rsa_authentication(struct ssh *ssh, int idx)
 				quit = 1;
 			}
 			memset(passphrase, 0, strlen(passphrase));
-			xfree(passphrase);
+			free(passphrase);
 			if (private != NULL || quit)
 				break;
 			debug2("bad passphrase given, try again...");
 		}
 	}
 	/* We no longer need the comment. */
-	xfree(comment);
+	free(comment);
 
 	if (private == NULL) {
 		if (!options.batch_mode && perm_ok)
@@ -436,9 +436,8 @@ static int
 try_challenge_response_authentication(struct ssh *ssh)
 {
 	int type, r, i;
-	size_t clen;
 	char prompt[1024];
-	u_char *challenge, *response;
+	char *challenge, *response;
 
 	debug("Doing challenge response authentication.");
 
@@ -459,12 +458,12 @@ try_challenge_response_authentication(struct ssh *ssh)
 			debug("No challenge.");
 			return 0;
 		}
-		if ((r = sshpkt_get_string(ssh, &challenge, &clen)) != 0 ||
+		if ((r = sshpkt_get_cstring(ssh, &challenge, NULL)) != 0 ||
 		    (r = sshpkt_get_end(ssh)) != 0)
 			fatal("%s: %s", __func__, ssh_err(r));
 		snprintf(prompt, sizeof prompt, "%s%s", challenge,
 		    strchr(challenge, '\n') ? "" : "\nResponse: ");
-		xfree(challenge);
+		free(challenge);
 		if (i != 0)
 			error("Permission denied, please try again.");
 		if (options.cipher == SSH_CIPHER_NONE)
@@ -472,7 +471,7 @@ try_challenge_response_authentication(struct ssh *ssh)
 			    "Response will be transmitted in clear text.");
 		response = read_passphrase(prompt, 0);
 		if (strcmp(response, "") == 0) {
-			xfree(response);
+			free(response);
 			break;
 		}
 		if ((r = sshpkt_start(ssh, SSH_CMSG_AUTH_TIS_RESPONSE)) != 0 ||
@@ -480,7 +479,7 @@ try_challenge_response_authentication(struct ssh *ssh)
 		    (r = sshpkt_send(ssh)) != 0)
 			fatal("%s: %s", __func__, ssh_err(r));
 		memset(response, 0, strlen(response));
-		xfree(response);
+		free(response);
 		ssh_packet_write_wait(ssh);
 		type = ssh_packet_read(ssh);
 		if (type == SSH_SMSG_SUCCESS)
@@ -515,7 +514,7 @@ try_password_authentication(struct ssh *ssh, char *prompt)
 		    (r = sshpkt_send(ssh)) != 0)
 			fatal("%s: %s", __func__, ssh_err(r));
 		memset(password, 0, strlen(password));
-		xfree(password);
+		free(password);
 		ssh_packet_write_wait(ssh);
 
 		type = ssh_packet_read(ssh);
@@ -538,11 +537,11 @@ ssh_kex(struct ssh *ssh, char *host, struct sockaddr *hostaddr)
 	int i, r;
 	BIGNUM *key;
 	struct sshkey *host_key, *server_key;
-	int bits, rbits;
+	int rbits;
 	int ssh_cipher_default = SSH_CIPHER_3DES;
 	u_char session_key[SSH_SESSION_KEY_LENGTH];
 	u_char cookie[8];
-	u_int supported_ciphers;
+	u_int bits, supported_ciphers;
 	u_int server_flags, client_flags;
 
 	debug("Waiting for server public key.");
@@ -563,9 +562,9 @@ ssh_kex(struct ssh *ssh, char *host, struct sockaddr *hostaddr)
 		fatal("%s: %s", __func__, ssh_err(r));
 
 	rbits = BN_num_bits(server_key->rsa->n);
-	if (bits != rbits) {
+	if (rbits < 0 || bits != (u_int)rbits) {
 		logit("Warning: Server lies about size of server public key: "
-		    "actual size is %d bits vs. announced %d.", rbits, bits);
+		    "actual size is %d bits vs. announced %u.", rbits, bits);
 		logit("Warning: This may be due to an old implementation of ssh.");
 	}
 	/* Get the host key. */
@@ -577,9 +576,9 @@ ssh_kex(struct ssh *ssh, char *host, struct sockaddr *hostaddr)
 		fatal("%s: %s", __func__, ssh_err(r));
 
 	rbits = BN_num_bits(host_key->rsa->n);
-	if (bits != rbits) {
+	if (rbits < 0 || bits != (u_int)rbits) {
 		logit("Warning: Server lies about size of server host key: "
-		    "actual size is %d bits vs. announced %d.", rbits, bits);
+		    "actual size is %d bits vs. announced %u.", rbits, bits);
 		logit("Warning: This may be due to an old implementation of ssh.");
 	}
 

@@ -14,7 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: modpipe.c,v 1.2 2012/12/11 23:48:07 djm Exp $ */
+/* $OpenBSD: modpipe.c,v 1.5 2013/05/10 03:46:14 djm Exp $ */
 
 #include <sys/types.h>
 #include <unistd.h>
@@ -27,7 +27,7 @@
 static void
 usage(void)
 {
-	fprintf(stderr, "Usage: modpipe [-m modspec ...] < in > out\n");
+	fprintf(stderr, "Usage: modpipe -w [-m modspec ...] < in > out\n");
 	fprintf(stderr, "modspec is one of:\n");
 	fprintf(stderr, "    xor:offset:value       - XOR \"value\" at \"offset\"\n");
 	fprintf(stderr, "    andor:offset:val1:val2 - AND \"val1\" then OR \"val2\" at \"offset\"\n");
@@ -45,20 +45,29 @@ static void
 parse_modification(const char *s, struct modification *m)
 {
 	char what[16+1];
-	int n;
+	int n, m1, m2;
 
 	bzero(m, sizeof(*m));
-	if ((n = sscanf(s, "%16[^:]%*[:]%lli%*[:]%hhi%*[:]%hhi",
-	    what, &m->offset, &m->m1, &m->m2)) < 3)
+	if ((n = sscanf(s, "%16[^:]%*[:]%lli%*[:]%i%*[:]%i",
+	    what, &m->offset, &m1, &m2)) < 3)
 		errx(1, "Invalid modification spec \"%s\"", s);
 	if (strcasecmp(what, "xor") == 0) {
-		m->what = MOD_XOR;
 		if (n > 3)
 			errx(1, "Invalid modification spec \"%s\"", s);
+		if (m1 < 0 || m1 > 0xff)
+			errx(1, "Invalid XOR modification value");
+		m->what = MOD_XOR;
+		m->m1 = m1;
 	} else if (strcasecmp(what, "andor") == 0) {
-		m->what = MOD_AND_OR;
 		if (n != 4)
 			errx(1, "Invalid modification spec \"%s\"", s);
+		if (m1 < 0 || m1 > 0xff)
+			errx(1, "Invalid AND modification value");
+		if (m2 < 0 || m2 > 0xff)
+			errx(1, "Invalid OR modification value");
+		m->what = MOD_AND_OR;
+		m->m1 = m1;
+		m->m2 = m2;
 	} else
 		errx(1, "Invalid modification type \"%s\"", what);
 }
@@ -71,14 +80,17 @@ main(int argc, char **argv)
 	size_t total;
 	ssize_t r, s, o;
 	struct modification mods[MAX_MODIFICATIONS];
-	u_int i, num_mods = 0;
+	u_int i, wflag = 0, num_mods = 0;
 
-	while ((ch = getopt(argc, argv, "m:")) != -1) {
+	while ((ch = getopt(argc, argv, "wm:")) != -1) {
 		switch (ch) {
 		case 'm':
 			if (num_mods >= MAX_MODIFICATIONS)
 				errx(1, "Too many modifications");
 			parse_modification(optarg, &(mods[num_mods++]));
+			break;
+		case 'w':
+			wflag = 1;
 			break;
 		default:
 			usage();
@@ -88,7 +100,7 @@ main(int argc, char **argv)
 	for (total = 0;;) {
 		r = s = read(STDIN_FILENO, buf, sizeof(buf));
 		if (r == 0)
-			return 0;
+			break;
 		if (r < 0) {
 			if (errno == EAGAIN || errno == EINTR)
 				continue;
@@ -111,7 +123,7 @@ main(int argc, char **argv)
 		for (o = 0; o < s; o += r) {
 			r = write(STDOUT_FILENO, buf, s - o);
 			if (r == 0)
-				return 0;
+				break;
 			if (r < 0) {
 				if (errno == EAGAIN || errno == EINTR)
 					continue;
@@ -120,5 +132,13 @@ main(int argc, char **argv)
 		}
 		total += s;
 	}
-	return 0;
+	/* Warn if modifications not reached in input stream */
+	r = 0;
+	for (i = 0; wflag && i < num_mods; i++) {
+		if (mods[i].offset < total)
+			continue;
+		r = 1;
+		fprintf(stderr, "modpipe: warning - mod %u not reached\n", i);
+	}
+	return r;
 }

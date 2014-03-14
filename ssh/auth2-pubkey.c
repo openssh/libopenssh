@@ -1,4 +1,4 @@
-/* $OpenBSD: auth2-pubkey.c,v 1.33 2012/11/14 02:24:27 djm Exp $ */
+/* $OpenBSD: auth2-pubkey.c,v 1.38 2013/06/21 00:34:49 djm Exp $ */
 /*
  * Copyright (c) 2000 Markus Friedl.  All rights reserved.
  *
@@ -71,10 +71,10 @@ extern u_int session_id2_len;
 static int
 userauth_pubkey(struct ssh *ssh)
 {
-	Authctxt *authctxt = ssh->authctxt;
+	struct authctxt *authctxt = ssh->authctxt;
 	struct sshbuf *b;
 	struct sshkey *key = NULL;
-	char *pkalg;
+	char *pkalg, *userstyle = NULL;
 	u_char *pkblob, *sig, have_sig;
 	size_t blen, slen;
 	int r, pktype;
@@ -141,8 +141,11 @@ userauth_pubkey(struct ssh *ssh)
 				    __func__, ssh_err(r));
 		}
 		/* reconstruct packet */
+		xasprintf(&userstyle, "%s%s%s", authctxt->user,
+		    authctxt->style ? ":" : "",
+		    authctxt->style ? authctxt->style : "");
 		if ((r = sshbuf_put_u8(b, SSH2_MSG_USERAUTH_REQUEST)) != 0 ||
-		    (r = sshbuf_put_cstring(b, authctxt->user)) != 0 ||
+		    (r = sshbuf_put_cstring(b, userstyle)) != 0 ||
 		    (r = sshbuf_put_cstring(b, ssh->compat & SSH_BUG_PKSERVICE ?
 		    "ssh-userauth" : authctxt->service)) != 0)
 			fatal("%s: build packet failed: %s",
@@ -164,6 +167,8 @@ userauth_pubkey(struct ssh *ssh)
 #ifdef DEBUG_PK
 		sshbuf_dump(b, stderr);
 #endif
+		pubkey_auth_info(authctxt, key, NULL);
+
 		/* test for correct signature */
 		authenticated = 0;
 		if (PRIVSEP(user_key_allowed(authctxt->pw, key)) &&
@@ -171,7 +176,7 @@ userauth_pubkey(struct ssh *ssh)
 		    sshbuf_len(b), ssh->compat)) == 0)
 			authenticated = 1;
 		sshbuf_free(b);
-		xfree(sig);
+		free(sig);
 	} else {
 		debug("test whether pkalg/pkblob are acceptable");
 		if ((r = sshpkt_get_end(ssh)) != 0)
@@ -202,9 +207,45 @@ done:
 	debug2("%s: authenticated %d pkalg %s", __func__, authenticated, pkalg);
 	if (key != NULL)
 		sshkey_free(key);
+	free(userstyle);
 	free(pkalg);
 	free(pkblob);
 	return authenticated;
+}
+
+void
+pubkey_auth_info(struct authctxt *authctxt, const struct sshkey *key,
+    const char *fmt, ...)
+{
+	char *fp, *extra;
+	va_list ap;
+	int i;
+
+	extra = NULL;
+	if (fmt != NULL) {
+		va_start(ap, fmt);
+		i = vasprintf(&extra, fmt, ap);
+		va_end(ap);
+		if (i < 0 || extra == NULL)
+			fatal("%s: vasprintf failed", __func__);
+	}
+
+	if (sshkey_is_cert(key)) {
+		fp = sshkey_fingerprint(key->cert->signature_key,
+		    SSH_FP_MD5, SSH_FP_HEX);
+		auth_info(authctxt, "%s ID %s (serial %llu) CA %s %s%s%s",
+		    sshkey_type(key), key->cert->key_id,
+		    (unsigned long long)key->cert->serial,
+		    sshkey_type(key->cert->signature_key), fp,
+		    extra == NULL ? "" : ", ", extra == NULL ? "" : extra);
+		free(fp);
+	} else {
+		fp = sshkey_fingerprint(key, SSH_FP_MD5, SSH_FP_HEX);
+		auth_info(authctxt, "%s %s%s%s", sshkey_type(key), fp,
+		    extra == NULL ? "" : ", ", extra == NULL ? "" : extra);
+		free(fp);
+	}
+	free(extra);
 }
 
 static int
@@ -220,7 +261,7 @@ match_principals_option(const char *principal_list, struct sshkey_cert *cert)
 		    principal_list, NULL)) != NULL) {
 			debug3("matched principal from key options \"%.100s\"",
 			    result);
-			xfree(result);
+			free(result);
 			return 1;
 		}
 	}
@@ -300,13 +341,14 @@ check_authkeys_file(FILE *f, char *file, struct sshkey *key, struct passwd *pw)
 	char *fp;
 
 	found_key = 0;
-	found = sshkey_new(sshkey_is_cert(key) ? KEY_UNSPEC : key->type);
-	if (found == NULL)
-		goto done;
-
+	found = NULL;
 	while (read_keyfile_line(f, file, line, sizeof(line), &linenum) != -1) {
 		char *cp, *key_options = NULL;
-
+		if (found != NULL)
+			sshkey_free(found);
+		found = sshkey_new(sshkey_is_cert(key) ? KEY_UNSPEC : key->type);
+		if (found == NULL)
+			goto done;
 		auth_clear_options();
 
 		/* Skip leading whitespace, empty and comment lines. */
@@ -358,7 +400,7 @@ check_authkeys_file(FILE *f, char *file, struct sshkey *key, struct passwd *pw)
 				reason = "Certificate does not contain an "
 				    "authorized principal";
  fail_reason:
-				xfree(fp);
+				free(fp);
 				error("%s", reason);
 				auth_debug_add("%s", reason);
 				continue;
@@ -368,13 +410,13 @@ check_authkeys_file(FILE *f, char *file, struct sshkey *key, struct passwd *pw)
 			    &reason) != 0)
 				goto fail_reason;
 			if (auth_cert_options(key, pw) != 0) {
-				xfree(fp);
+				free(fp);
 				continue;
 			}
 			verbose("Accepted certificate ID \"%s\" "
 			    "signed by %s CA %s via %s", key->cert->key_id,
 			    sshkey_type(found), fp, file);
-			xfree(fp);
+			free(fp);
 			found_key = 1;
 			break;
 		} else if (sshkey_equal(found, key)) {
@@ -384,12 +426,10 @@ check_authkeys_file(FILE *f, char *file, struct sshkey *key, struct passwd *pw)
 			if (key_is_cert_authority)
 				continue;
 			found_key = 1;
-			debug("matching key found: file %s, line %lu",
-			    file, linenum);
 			fp = sshkey_fingerprint(found, SSH_FP_MD5, SSH_FP_HEX);
-			verbose("Found matching %s key: %s",
-			    sshkey_type(found), fp);
-			xfree(fp);
+			debug("matching key found: file %s, line %lu %s %s",
+			    file, linenum, sshkey_type(found), fp);
+			free(fp);
 			break;
 		}
 	}
@@ -456,10 +496,8 @@ user_cert_trusted_ca(struct passwd *pw, struct sshkey *key)
 	ret = 1;
 
  out:
-	if (principals_file != NULL)
-		xfree(principals_file);
-	if (ca_fp != NULL)
-		xfree(ca_fp);
+	free(principals_file);
+	free(ca_fp);
 	return ret;
 }
 
@@ -514,8 +552,8 @@ user_key_command_allowed2(struct passwd *user_pw, struct sshkey *key)
 	    "u", user_pw->pw_name, (char *)NULL);
 	pw = getpwnam(username);
 	if (pw == NULL) {
-		error("AuthorizedKeyCommandUser \"%s\" not found: %s",
-		    options.authorized_keys_command, strerror(errno));
+		error("AuthorizedKeysCommandUser \"%s\" not found: %s",
+		    username, strerror(errno));
 		free(username);
 		return 0;
 	}
@@ -665,13 +703,13 @@ user_key_allowed(struct passwd *pw, struct sshkey *key)
 		    options.authorized_keys_files[i], pw);
 
 		success = user_key_allowed2(pw, key, file);
-		xfree(file);
+		free(file);
 	}
 
 	return success;
 }
 
-Authmethod method_pubkey = {
+struct authmethod method_pubkey = {
 	"publickey",
 	userauth_pubkey,
 	&options.pubkey_authentication

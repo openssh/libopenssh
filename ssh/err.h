@@ -70,7 +70,8 @@
 #define SSH_ERR_AGENT_NOT_PRESENT		-46
 #define SSH_ERR_AGENT_NO_IDENTITIES		-47
 #define SSH_ERR_BUFFER_READ_ONLY		-48
-
+#define SSH_ERR_KRL_BAD_MAGIC			-49
+#define SSH_ERR_KEY_REVOKED			-50
 
 /* Translate a numeric error code to a human-readable error string */
 const char *ssh_err(int n);

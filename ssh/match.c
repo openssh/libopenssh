@@ -1,4 +1,4 @@
-/* $OpenBSD: match.c,v 1.27 2008/06/10 23:06:19 djm Exp $ */
+/* $OpenBSD: match.c,v 1.28 2013/05/17 00:13:13 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -38,6 +38,7 @@
 #include <sys/types.h>
 
 #include <ctype.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -232,7 +233,7 @@ match_user(const char *user, const char *host, const char *ipaddr,
 
 /*
  * Returns first item from client-list that is also supported by server-list,
- * caller must xfree() returned string.
+ * caller must free the returned string.
  */
 #define	MAX_PROP	40
 #define	SEP	","

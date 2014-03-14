@@ -236,7 +236,7 @@ chan_obuf_empty(Channel *c)
 static void
 chan_send_ieof1(Channel *c)
 {
-	struct ssh *ssh = active_state;	/* XXX */
+	struct ssh *ssh = c->ssh;
 	int r;
 
 	debug2("channel %d: send ieof", c->self);
@@ -257,7 +257,7 @@ chan_send_ieof1(Channel *c)
 static void
 chan_send_oclose1(Channel *c)
 {
-	struct ssh *ssh = active_state;	/* XXX */
+	struct ssh *ssh = c->ssh;
 	int r;
 
 	debug2("channel %d: send oclose", c->self);
@@ -358,7 +358,7 @@ chan_write_failed2(Channel *c)
 static void
 chan_send_eof2(Channel *c)
 {
-	struct ssh *ssh = active_state;	/* XXX */
+	struct ssh *ssh = c->ssh;
 	int r;
 
 	debug2("channel %d: send eof", c->self);
@@ -379,7 +379,7 @@ chan_send_eof2(Channel *c)
 static void
 chan_send_close2(Channel *c)
 {
-	struct ssh *ssh = active_state;	/* XXX */
+	struct ssh *ssh = c->ssh;
 	int r;
 
 	debug2("channel %d: send close", c->self);
@@ -400,7 +400,7 @@ chan_send_close2(Channel *c)
 static void
 chan_send_eow2(Channel *c)
 {
-	struct ssh *ssh = active_state;	/* XXX */
+	struct ssh *ssh = c->ssh;
 	int r;
 
 	debug2("channel %d: send eow", c->self);
@@ -469,7 +469,7 @@ chan_is_dead(Channel *c, int do_send)
 		debug2("channel %d: is dead", c->self);
 		return 1;
 	}
-	if ((active_state->compat & SSH_BUG_EXTEOF) &&
+	if ((c->ssh->compat & SSH_BUG_EXTEOF) &&
 	    c->extended_usage == CHAN_EXTENDED_WRITE &&
 	    c->efd != -1 &&
 	    sshbuf_len(c->extended) > 0) {

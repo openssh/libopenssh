@@ -1,4 +1,4 @@
-/* $OpenBSD: authfile.c,v 1.94 2012/12/11 22:31:18 markus Exp $ */
+/* $OpenBSD: authfile.c,v 1.97 2013/05/17 00:13:13 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -84,7 +84,7 @@ sshkey_private_rsa1_to_blob(struct sshkey *key, struct sshbuf *blob,
 	u_char buf[8];
 	int r, cipher_num;
 	struct sshcipher_ctx ciphercontext;
-	struct sshcipher *cipher;
+	const struct sshcipher *cipher;
 	u_char *cp;
 
 	/*
@@ -154,7 +154,7 @@ sshkey_private_rsa1_to_blob(struct sshkey *key, struct sshbuf *blob,
 	    CIPHER_ENCRYPT)) != 0)
 		goto out;
 	if ((r = cipher_crypt(&ciphercontext, cp,
-	    sshbuf_ptr(buffer), sshbuf_len(buffer), 0)) != 0)
+	    sshbuf_ptr(buffer), sshbuf_len(buffer), 0, 0)) != 0)
 		goto out;
 	if ((r = cipher_cleanup(&ciphercontext)) != 0)
 		goto out;
@@ -422,7 +422,7 @@ sshkey_parse_private_rsa1(struct sshbuf *blob, const char *passphrase,
 	u_char *cp;
 	char *comment = NULL;
 	struct sshcipher_ctx ciphercontext;
-	struct sshcipher *cipher;
+	const struct sshcipher *cipher;
 	struct sshkey *prv = NULL;
 
 	*keyp = NULL;
@@ -480,7 +480,7 @@ sshkey_parse_private_rsa1(struct sshbuf *blob, const char *passphrase,
 	    CIPHER_DECRYPT)) != 0)
 		goto out;
 	if ((r = cipher_crypt(&ciphercontext, cp,
-	    sshbuf_ptr(copy), sshbuf_len(copy), 0)) != 0) {
+	    sshbuf_ptr(copy), sshbuf_len(copy), 0, 0)) != 0) {
 		cipher_cleanup(&ciphercontext);
 		goto out;
 	}
@@ -545,9 +545,13 @@ sshkey_parse_private_pem(struct sshbuf *blob, int type, const char *passphrase,
 	if (commentp != NULL)
 		*commentp = NULL;
 
-	if ((bio = BIO_new_mem_buf((u_char *)sshbuf_ptr(blob),
-	    sshbuf_len(blob))) == NULL)
+	if ((bio = BIO_new(BIO_s_mem())) == NULL || sshbuf_len(blob) > INT_MAX)
 		return SSH_ERR_ALLOC_FAIL;
+	if (BIO_write(bio, sshbuf_ptr(blob), sshbuf_len(blob)) !=
+	    (int)sshbuf_len(blob)) {
+		r = SSH_ERR_ALLOC_FAIL;
+		goto out;
+	}
 	
 	if ((pk = PEM_read_bio_PrivateKey(bio, NULL, NULL,
 	    (char *)passphrase)) == NULL) {

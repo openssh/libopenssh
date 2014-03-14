@@ -1,4 +1,4 @@
-/* $OpenBSD: hostfile.c,v 1.50 2010/12/04 13:31:37 djm Exp $ */
+/* $OpenBSD: hostfile.c,v 1.52 2013/07/12 00:19:58 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -62,7 +62,7 @@ struct hostkeys {
 };
 
 static int
-extract_salt(const char *s, u_int l, char *salt, size_t salt_len)
+extract_salt(const char *s, u_int l, u_char *salt, size_t salt_len)
 {
 	char *p, *b64salt;
 	u_int b64len;
@@ -94,7 +94,7 @@ extract_salt(const char *s, u_int l, char *salt, size_t salt_len)
 	b64salt[b64len] = '\0';
 
 	ret = __b64_pton(b64salt, salt, salt_len);
-	xfree(b64salt);
+	free(b64salt);
 	if (ret == -1) {
 		debug2("extract_salt: salt decode error");
 		return (-1);
@@ -113,7 +113,8 @@ host_hash(const char *host, const char *name_from_hostfile, u_int src_len)
 {
 	const EVP_MD *md = EVP_sha1();
 	HMAC_CTX mac_ctx;
-	char salt[256], result[256], uu_salt[512], uu_result[512];
+	u_char salt[256], result[256];
+	char uu_salt[512], uu_result[512];
 	static char encoded[1024];
 	u_int i, len;
 
@@ -131,7 +132,7 @@ host_hash(const char *host, const char *name_from_hostfile, u_int src_len)
 	}
 
 	HMAC_Init(&mac_ctx, salt, len, md);
-	HMAC_Update(&mac_ctx, host, strlen(host));
+	HMAC_Update(&mac_ctx, (u_char *)host, strlen(host));
 	HMAC_Final(&mac_ctx, result, NULL);
 	HMAC_cleanup(&mac_ctx);
 
@@ -243,7 +244,7 @@ load_hostkeys(struct hostkeys *hostkeys, const char *host, const char *path)
 	char *cp, *cp2, *hashed_host;
 	HostkeyMarker marker;
 	struct sshkey *key;
-	int kbits;
+	u_int kbits;
 
 	if ((f = fopen(path, "r")) == NULL)
 		return;
@@ -332,16 +333,14 @@ free_hostkeys(struct hostkeys *hostkeys)
 	u_int i;
 
 	for (i = 0; i < hostkeys->num_entries; i++) {
-		xfree(hostkeys->entries[i].host);
-		xfree(hostkeys->entries[i].file);
+		free(hostkeys->entries[i].host);
+		free(hostkeys->entries[i].file);
 		sshkey_free(hostkeys->entries[i].key);
 		bzero(hostkeys->entries + i, sizeof(*hostkeys->entries));
 	}
-	if (hostkeys->entries != NULL)
-		xfree(hostkeys->entries);
-	hostkeys->entries = NULL;
-	hostkeys->num_entries = 0;
-	xfree(hostkeys);
+	free(hostkeys->entries);
+	bzero(hostkeys, sizeof(*hostkeys));
+	free(hostkeys);
 }
 
 static int

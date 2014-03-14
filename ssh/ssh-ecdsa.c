@@ -1,4 +1,4 @@
-/* $OpenBSD: ssh-ecdsa.c,v 1.4 2010/09/10 01:04:10 djm Exp $ */
+/* $OpenBSD: ssh-ecdsa.c,v 1.6 2013/05/17 00:13:14 djm Exp $ */
 /*
  * Copyright (c) 2000 Markus Friedl.  All rights reserved.
  * Copyright (c) 2010 Damien Miller.  All rights reserved.
@@ -185,7 +185,6 @@ ssh_ecdsa_verify(const struct sshkey *key,
 		sshbuf_free(b);
 	if (sig != NULL)
 		ECDSA_SIG_free(sig);
-	if (ktype != NULL)
-		free(ktype);
+	free(ktype);
 	return ret;
 }

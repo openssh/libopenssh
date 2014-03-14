@@ -1,4 +1,4 @@
-/* $OpenBSD: canohost.c,v 1.66 2010/01/13 01:20:20 dtucker Exp $ */
+/* $OpenBSD: canohost.c,v 1.67 2013/05/17 00:13:13 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -33,11 +33,10 @@
 #include "misc.h"
 
 static void check_ip_options(int, char *);
-static int cached_port = -1;
 
 /*
  * Return the canonical name of the host at the other end of the socket. The
- * caller should free the returned string with xfree.
+ * caller should free the returned string.
  */
 
 static char *
@@ -279,13 +278,6 @@ get_local_name(int fd)
 	return host;
 }
 
-void
-clear_cached_addr(void)
-{
-	cached_port = -1;
-}
-
-
 const char *
 get_remote_name_or_ip(u_int utmp_len, int use_dns)
 {
@@ -334,9 +326,8 @@ get_sock_port(int sock, int local)
 /* Returns remote/local port number for the current connection. */
 
 static int
-get_port(int local)
+ssh_get_port(struct ssh *ssh, int local)
 {
-	struct ssh *ssh = active_state;			/* XXX */
 	/*
 	 * If the connection is not a socket, return 65535.  This is
 	 * intentionally chosen to be an unprivileged port number.
@@ -355,17 +346,16 @@ get_peer_port(int sock)
 }
 
 int
-get_remote_port(void)
+ssh_get_remote_port(struct ssh *ssh)
 {
 	/* Cache to avoid getpeername() on a dead connection */
-	if (cached_port == -1)
-		cached_port = get_port(0);
-
-	return cached_port;
+	if (!ssh->remote_port)
+		ssh->remote_port = ssh_get_port(ssh, 0);
+	return ssh->remote_port;
 }
 
 int
-get_local_port(void)
+ssh_get_local_port(struct ssh *ssh)
 {
-	return get_port(1);
+	return ssh_get_port(ssh, 1);
 }

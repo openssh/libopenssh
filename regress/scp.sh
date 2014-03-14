@@ -1,20 +1,18 @@
-#	$OpenBSD: scp.sh,v 1.7 2006/01/31 10:36:33 djm Exp $
+#	$OpenBSD: scp.sh,v 1.9 2013/05/17 10:35:43 dtucker Exp $
 #	Placed in the Public Domain.
 
 tid="scp"
 
 #set -x
 
-DATA=/bin/ls
-COPY=${OBJ}/copy
 COPY2=${OBJ}/copy2
 DIR=${COPY}.dd
 DIR2=${COPY}.dd2
 
 SRC=`dirname ${SCRIPT}`
-cp ${SRC}/scp-ssh-wrapper.sh ${OBJ}/scp-ssh-wrapper.exe
-chmod 755 ${OBJ}/scp-ssh-wrapper.exe
-scpopts="-q -S ${OBJ}/scp-ssh-wrapper.exe"
+cp ${SRC}/scp-ssh-wrapper.sh ${OBJ}/scp-ssh-wrapper.scp
+chmod 755 ${OBJ}/scp-ssh-wrapper.scp
+scpopts="-q -S ${OBJ}/scp-ssh-wrapper.scp"
 
 scpclean() {
 	rm -rf ${COPY} ${COPY2} ${DIR} ${DIR2}

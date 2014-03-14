@@ -1,4 +1,4 @@
-/* $OpenBSD: dh.c,v 1.49 2011/12/07 05:44:38 djm Exp $ */
+/* $OpenBSD: dh.c,v 1.51 2013/07/02 12:31:43 markus Exp $ */
 /*
  * Copyright (c) 2000 Niels Provos.  All rights reserved.
  *
@@ -46,7 +46,7 @@ parse_prime(int linenum, char *line, struct dhgroup *dhg)
 	const char *errstr = NULL;
 	long long n;
 
-	dhg->g = dhg->p = NULL;
+	dhg->p = dhg->g = NULL;
 	cp = line;
 	if ((arg = strdelim(&cp)) == NULL)
 		return 0;
@@ -58,59 +58,84 @@ parse_prime(int linenum, char *line, struct dhgroup *dhg)
 
 	/* time */
 	if (cp == NULL || *arg == '\0')
-		goto fail;
+		goto truncated;
 	arg = strsep(&cp, " "); /* type */
 	if (cp == NULL || *arg == '\0')
-		goto fail;
+		goto truncated;
 	/* Ensure this is a safe prime */
 	n = strtonum(arg, 0, 5, &errstr);
-	if (errstr != NULL || n != MODULI_TYPE_SAFE)
+	if (errstr != NULL || n != MODULI_TYPE_SAFE) {
+		error("moduli:%d: type is not %d", linenum, MODULI_TYPE_SAFE);
 		goto fail;
+	}
 	arg = strsep(&cp, " "); /* tests */
 	if (cp == NULL || *arg == '\0')
-		goto fail;
+		goto truncated;
 	/* Ensure prime has been tested and is not composite */
 	n = strtonum(arg, 0, 0x1f, &errstr);
 	if (errstr != NULL ||
-	    (n & MODULI_TESTS_COMPOSITE) || !(n & ~MODULI_TESTS_COMPOSITE))
+	    (n & MODULI_TESTS_COMPOSITE) || !(n & ~MODULI_TESTS_COMPOSITE)) {
+		error("moduli:%d: invalid moduli tests flag", linenum);
 		goto fail;
+	}
 	arg = strsep(&cp, " "); /* tries */
 	if (cp == NULL || *arg == '\0')
-		goto fail;
+		goto truncated;
 	n = strtonum(arg, 0, 1<<30, &errstr);
-	if (errstr != NULL || n == 0)
+	if (errstr != NULL || n == 0) {
+		error("moduli:%d: invalid primality trial count", linenum);
 		goto fail;
+	}
 	strsize = strsep(&cp, " "); /* size */
 	if (cp == NULL || *strsize == '\0' ||
 	    (dhg->size = (int)strtonum(strsize, 0, 64*1024, &errstr)) == 0 ||
-	    errstr)
+	    errstr) {
+		error("moduli:%d: invalid prime length", linenum);
 		goto fail;
+	}
 	/* The whole group is one bit larger */
 	dhg->size++;
 	gen = strsep(&cp, " "); /* gen */
 	if (cp == NULL || *gen == '\0')
-		goto fail;
+		goto truncated;
 	prime = strsep(&cp, " "); /* prime */
-	if (cp != NULL || *prime == '\0')
-		goto fail;
-
-	if ((dhg->g = BN_new()) == NULL ||
-	    (dhg->p = BN_new()) == NULL ||
-	    BN_hex2bn(&dhg->g, gen) == 0 ||
-	    BN_hex2bn(&dhg->p, prime) == 0 ||
-	    BN_num_bits(dhg->p) != dhg->size ||
-	    BN_is_zero(dhg->g) || BN_is_one(dhg->g)) {
-		if (dhg->g)
-			BN_clear_free(dhg->g);
-		if (dhg->p)
-			BN_clear_free(dhg->p);
+	if (cp != NULL || *prime == '\0') {
+ truncated:
+		error("moduli:%d: truncated", linenum);
 		goto fail;
 	}
 
-	return (1);
+	if ((dhg->g = BN_new()) == NULL ||
+	    (dhg->p = BN_new()) == NULL) {
+		error("parse_prime: BN_new failed");
+		goto fail;
+	}
+	if (BN_hex2bn(&dhg->g, gen) == 0) {
+		error("moduli:%d: could not parse generator value", linenum);
+		goto fail;
+	}
+	if (BN_hex2bn(&dhg->p, prime) == 0) {
+		error("moduli:%d: could not parse prime value", linenum);
+		goto fail;
+	}
+	if (BN_num_bits(dhg->p) != dhg->size) {
+		error("moduli:%d: prime has wrong size: actual %d listed %d",
+		    linenum, BN_num_bits(dhg->p), dhg->size - 1);
+		goto fail;
+	}
+	if (BN_cmp(dhg->g, BN_value_one()) <= 0) {
+		error("moduli:%d: generator is invalid", linenum);
+		goto fail;
+	}
+	return 1;
+
  fail:
-	error("Bad prime description in line %d", linenum);
-	return (0);
+	if (dhg->g != NULL)
+		BN_clear_free(dhg->g);
+	if (dhg->p != NULL)
+		BN_clear_free(dhg->p);
+	dhg->g = dhg->p = NULL;
+	return 0;
 }
 
 DH *
@@ -321,7 +346,7 @@ dh_new_group14(void)
  * with:  O(exp(1.9223 * (ln q)^(1/3) (ln ln q)^(2/3)))
  */
 
-int
+u_int
 dh_estimate(int bits)
 {
 

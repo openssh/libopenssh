@@ -99,7 +99,8 @@ const u_char	*ssh_packet_payload(struct ssh *ssh, size_t *lenp);
  * and payload.
  * the encrypted packet is appended to the output byte-stream.
  */
-int	ssh_packet_put(struct ssh *ssh, int type, const char *data, size_t len);
+int	ssh_packet_put(struct ssh *ssh, int type, const u_char *data,
+    size_t len);
 
 /*
  * ssh_input_space() checks if 'len' bytes can be appended to the
@@ -110,7 +111,7 @@ int	ssh_input_space(struct ssh *ssh, size_t len);
 /*
  * ssh_input_append() appends data to the input byte-stream.
  */
-int	ssh_input_append(struct ssh *ssh, const char *data, size_t len);
+int	ssh_input_append(struct ssh *ssh, const u_char *data, size_t len);
 
 /*
  * ssh_output_space() checks if 'len' bytes can be appended to the
